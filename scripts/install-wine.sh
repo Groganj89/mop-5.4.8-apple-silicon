@@ -2,230 +2,418 @@
 
 set -euo pipefail
 
-WINE_VERSION="11.17"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-DOWNLOAD_URL="https://github.com/Gcenx/macOS_Wine_builds/releases/download/${WINE_VERSION}/wine-staging-${WINE_VERSION}-osx64.tar.xz"
+LAUNCHER_URL="https://twinstar-wow.com/launcher/latest.zip"
 
-DOWNLOAD_DIR="$HOME/Downloads/WoW-MoP-Setup"
-ARCHIVE="$DOWNLOAD_DIR/wine-staging-${WINE_VERSION}-osx64.tar.xz"
-
-APPLICATIONS_DIR="$HOME/Applications"
-WINE_APP="$APPLICATIONS_DIR/Wine Staging.app"
-WINE_BIN="$WINE_APP/Contents/Resources/wine/bin/wine"
+DOWNLOAD_DIR="$HOME/Downloads/TwinStar-Launcher"
+ZIP_FILE="$DOWNLOAD_DIR/twinstar-launcher.zip"
+EXTRACT_DIR="$DOWNLOAD_DIR/extracted"
 
 echo
 echo "=================================================="
-echo " Wine Staging Installer"
+echo " TwinStar Launcher Installer"
 echo "=================================================="
 echo
 
 # ------------------------------------------------------------
-# Architecture
+# Find Wine
 # ------------------------------------------------------------
 
-ARCH="$(uname -m)"
+find_wine
 
-echo "Architecture:"
-echo "  $ARCH"
+echo "Wine detected:"
+echo "  $WINE"
 echo
 
-if [[ "$ARCH" != "arm64" ]]; then
-    echo "WARNING: This project is designed for Apple Silicon."
-    echo
-fi
-
-# ------------------------------------------------------------
-# Rosetta 2
-# ------------------------------------------------------------
-
-echo "Checking Rosetta 2..."
-echo
-
-if /usr/bin/pgrep oahd >/dev/null 2>&1; then
-
-    echo "Rosetta 2 detected."
-
-else
-
-    echo "Installing Rosetta 2..."
-    echo
-
-    /usr/sbin/softwareupdate \
-        --install-rosetta \
-        --agree-to-license
-
-fi
+"$WINE" --version
 
 echo
 
 # ------------------------------------------------------------
-# Existing Wine
+# Find/create Wine prefix
 # ------------------------------------------------------------
 
-CANDIDATES=(
-    "$HOME/Games/Wine/Wine Staging.app/Contents/Resources/wine/bin/wine"
-    "$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
-    "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
-    "/opt/homebrew/bin/wine"
-    "/usr/local/bin/wine"
-)
+if ! find_prefix; then
 
-for candidate in "${CANDIDATES[@]}"; do
-
-    if [[ -x "$candidate" ]]; then
-
-        echo "Wine already installed:"
-        echo "  $candidate"
-        echo
-
-        "$candidate" --version
-
-        echo
-        exit 0
-
-    fi
-
-done
-
-if command -v wine >/dev/null 2>&1; then
-
-    echo "Wine already available:"
-    echo "  $(command -v wine)"
+    echo "No existing Wine prefix was detected."
+    echo
+    echo "Creating the default MoP prefix..."
     echo
 
-    wine --version
+    export WINEPREFIX="$HOME/Games/WoW-MoP/prefix"
 
-    exit 0
+    mkdir -p "$(dirname "$WINEPREFIX")"
+
+    "$WINE" wineboot
+
+    echo
+    echo "Wine prefix created:"
+    echo "  $WINEPREFIX"
+    echo
 
 fi
 
+echo "Using Wine prefix:"
+echo "  $WINEPREFIX"
+echo
+
 # ------------------------------------------------------------
-# Download
+# Check .NET
 # ------------------------------------------------------------
 
-echo "Wine Staging was not found."
+DOTNET="$WINEPREFIX/drive_c/Program Files/dotnet/dotnet.exe"
+
+if [[ ! -f "$DOTNET" ]]; then
+
+    echo "ERROR: Microsoft .NET was not found in this"
+    echo "Wine prefix."
+    echo
+    echo "The TwinStar Launcher requires the Windows"
+    echo "x64 .NET 8 Desktop Runtime."
+    echo
+    echo "Run:"
+    echo
+    echo "  ./scripts/install-dotnet.sh"
+    echo
+    echo "Then run this script again."
+    echo
+
+    exit 1
+
+fi
+
+echo "Checking installed .NET runtimes..."
 echo
-echo "Downloading Wine Staging $WINE_VERSION..."
+
+RUNTIMES="$(
+    "$WINE" \
+        "C:\\Program Files\\dotnet\\dotnet.exe" \
+        --list-runtimes 2>/dev/null || true
+)"
+
+echo "$RUNTIMES"
 echo
-echo "Source:"
-echo "  $DOWNLOAD_URL"
+
+if ! echo "$RUNTIMES" \
+    | grep -q "Microsoft.WindowsDesktop.App 8\."; then
+
+    echo "ERROR: Microsoft.WindowsDesktop.App 8.x"
+    echo "was not detected."
+    echo
+    echo "The TwinStar Launcher requires the Windows"
+    echo "x64 .NET 8 Desktop Runtime."
+    echo
+    echo "Run:"
+    echo
+    echo "  ./scripts/install-dotnet.sh"
+    echo
+
+    exit 1
+
+fi
+
+echo ".NET 8 Desktop Runtime detected."
 echo
+
+# ------------------------------------------------------------
+# Prepare download directory
+# ------------------------------------------------------------
 
 mkdir -p "$DOWNLOAD_DIR"
-mkdir -p "$APPLICATIONS_DIR"
+
+echo "TwinStar download directory:"
+echo "  $DOWNLOAD_DIR"
+echo
+
+# ------------------------------------------------------------
+# Download TwinStar Launcher
+# ------------------------------------------------------------
+
+echo "Downloading the latest TwinStar Launcher..."
+echo
+echo "Source:"
+echo "  $LAUNCHER_URL"
+echo
+
+rm -f "$ZIP_FILE"
 
 curl \
     --fail \
     --location \
     --progress-bar \
-    "$DOWNLOAD_URL" \
-    --output "$ARCHIVE"
+    "$LAUNCHER_URL" \
+    --output "$ZIP_FILE"
 
 echo
-echo "Download complete."
+echo "Download complete:"
+echo "  $ZIP_FILE"
 echo
 
 # ------------------------------------------------------------
-# Extract
+# Validate ZIP
 # ------------------------------------------------------------
 
-echo "Extracting Wine..."
+echo "Validating downloaded archive..."
 echo
 
-EXTRACT_DIR="$DOWNLOAD_DIR/wine-$WINE_VERSION"
+if ! unzip -tq "$ZIP_FILE" >/dev/null; then
+
+    echo "ERROR: The downloaded TwinStar archive"
+    echo "does not appear to be a valid ZIP file."
+    echo
+    echo "Downloaded file:"
+    echo "  $ZIP_FILE"
+    echo
+
+    exit 1
+
+fi
+
+echo "Archive is valid."
+echo
+
+# ------------------------------------------------------------
+# Extract TwinStar Launcher
+# ------------------------------------------------------------
+
+echo "Extracting TwinStar Launcher..."
+echo
 
 rm -rf "$EXTRACT_DIR"
 mkdir -p "$EXTRACT_DIR"
 
-tar -xJf "$ARCHIVE" -C "$EXTRACT_DIR"
+unzip -q -o \
+    "$ZIP_FILE" \
+    -d "$EXTRACT_DIR"
 
 echo "Extraction complete."
 echo
 
 # ------------------------------------------------------------
-# Locate Wine Staging.app
+# Locate launcher
 # ------------------------------------------------------------
 
-EXTRACTED_APP="$(
+echo "Locating TwinStar Launcher..."
+echo
+
+LAUNCHER=""
+
+# Prefer an executable with TwinStar in the filename.
+
+while IFS= read -r -d '' file; do
+
+    LAUNCHER="$file"
+    break
+
+done < <(
     find "$EXTRACT_DIR" \
-        -type d \
-        -name "Wine Staging.app" \
-        -print \
-        -quit
-)"
+        -type f \
+        -iname "*twinstar*.exe" \
+        -print0
+)
 
-if [[ -z "$EXTRACTED_APP" ]]; then
+# If that failed, look for any EXE located beside
+# appsettings.json. This is important because TwinStar
+# expects appsettings.json in its working directory.
 
-    echo "ERROR: Wine Staging.app was not found"
+if [[ -z "$LAUNCHER" ]]; then
+
+    while IFS= read -r -d '' settings; do
+
+        SETTINGS_DIR="$(dirname "$settings")"
+
+        while IFS= read -r -d '' file; do
+
+            LAUNCHER="$file"
+            break
+
+        done < <(
+            find "$SETTINGS_DIR" \
+                -maxdepth 1 \
+                -type f \
+                -iname "*.exe" \
+                -print0
+        )
+
+        if [[ -n "$LAUNCHER" ]]; then
+            break
+        fi
+
+    done < <(
+        find "$EXTRACT_DIR" \
+            -type f \
+            -iname "appsettings.json" \
+            -print0
+    )
+
+fi
+
+# Final fallback: first EXE in the archive.
+
+if [[ -z "$LAUNCHER" ]]; then
+
+    while IFS= read -r -d '' file; do
+
+        LAUNCHER="$file"
+        break
+
+    done < <(
+        find "$EXTRACT_DIR" \
+            -type f \
+            -iname "*.exe" \
+            -print0
+    )
+
+fi
+
+if [[ -z "$LAUNCHER" ]]; then
+
+    echo "ERROR: Could not locate the TwinStar Launcher"
     echo "inside the downloaded archive."
     echo
-    echo "Extracted contents:"
+    echo "Extracted files:"
     echo
 
-    find "$EXTRACT_DIR" -maxdepth 3 -print
+    find "$EXTRACT_DIR" \
+        -maxdepth 4 \
+        -type f \
+        -print
 
     exit 1
 
 fi
 
-echo "Found:"
-echo "  $EXTRACTED_APP"
+echo "TwinStar Launcher found:"
+echo "  $LAUNCHER"
 echo
 
 # ------------------------------------------------------------
-# Install
+# Determine launcher working directory
 # ------------------------------------------------------------
 
-echo "Installing Wine Staging into:"
-echo "  $APPLICATIONS_DIR"
+LAUNCHER_DIR="$(dirname "$LAUNCHER")"
+LAUNCHER_FILE="$(basename "$LAUNCHER")"
+
+echo "Launcher working directory:"
+echo "  $LAUNCHER_DIR"
 echo
 
-rm -rf "$WINE_APP"
-
-cp -R "$EXTRACTED_APP" "$WINE_APP"
-
 # ------------------------------------------------------------
-# Remove quarantine
+# Validate appsettings.json
 # ------------------------------------------------------------
 
-echo "Removing downloaded-file quarantine attribute..."
-echo
+APPSETTINGS="$LAUNCHER_DIR/appsettings.json"
 
-xattr -dr com.apple.quarantine "$WINE_APP" 2>/dev/null || true
+if [[ ! -f "$APPSETTINGS" ]]; then
 
-# ------------------------------------------------------------
-# Verify
-# ------------------------------------------------------------
-
-if [[ ! -x "$WINE_BIN" ]]; then
-
-    echo "ERROR: Wine was copied but the executable"
-    echo "could not be found:"
+    echo "ERROR: TwinStar appsettings.json was not found."
     echo
-    echo "  $WINE_BIN"
+    echo "The launcher requires appsettings.json in its"
+    echo "current working directory."
+    echo
+    echo "Expected:"
+    echo "  $APPSETTINGS"
+    echo
+    echo "Launcher directory contents:"
+    echo
 
+    ls -la "$LAUNCHER_DIR"
+
+    echo
     exit 1
 
 fi
 
-echo "Verifying Wine..."
-echo
-
-"$WINE_BIN" --version
-
+echo "TwinStar configuration detected:"
+echo "  $APPSETTINGS"
 echo
 
 # ------------------------------------------------------------
-# Complete
+# Display installation information
 # ------------------------------------------------------------
 
 echo "=================================================="
-echo " Wine Installation Complete"
+echo " Starting TwinStar Launcher"
 echo "=================================================="
 echo
-echo "Installed:"
-echo "  $WINE_APP"
+echo "When selecting the WoW installation location,"
+echo "choose a location inside the Wine C: drive."
 echo
-echo "Executable:"
-echo "  $WINE_BIN"
+echo "Recommended:"
 echo
+echo "  C:\\WoW"
+echo
+echo "This corresponds to:"
+echo
+echo "  $WINEPREFIX/drive_c/WoW"
+echo
+echo "Allow TwinStar to completely download/update"
+echo "the World of Warcraft client."
+echo
+echo "When the download has finished, close TwinStar."
+echo
+echo "The setup process will then continue."
+echo
+
+# ------------------------------------------------------------
+# Launch TwinStar
+# ------------------------------------------------------------
+
+#
+# TwinStar loads appsettings.json relative to its current
+# working directory.
+#
+# Running the EXE while the shell is still inside the Git
+# repository causes .NET to search the repository root for
+# appsettings.json and terminate with FileNotFoundException.
+#
+# Therefore we MUST change into the launcher directory before
+# starting the application.
+#
+
+cd "$LAUNCHER_DIR"
+
+"$WINE" "./$LAUNCHER_FILE"
+
+LAUNCH_EXIT_CODE=$?
+
+echo
+echo "TwinStar Launcher exited."
+echo "Exit code:"
+echo "  $LAUNCH_EXIT_CODE"
+echo
+
+# ------------------------------------------------------------
+# Look for downloaded WoW client
+# ------------------------------------------------------------
+
+echo "Checking for World of Warcraft..."
+echo
+
+WOW_EXE="$(
+    find "$WINEPREFIX/drive_c" \
+        -type f \
+        -iname "Wow-64.exe" \
+        -print \
+        -quit 2>/dev/null || true
+)"
+
+if [[ -n "$WOW_EXE" ]]; then
+
+    echo "World of Warcraft detected:"
+    echo "  $WOW_EXE"
+    echo
+
+else
+
+    echo "Wow-64.exe was not found yet."
+    echo
+    echo "If TwinStar has not finished downloading the"
+    echo "client, run this script again:"
+    echo
+    echo "  ./scripts/install-twinstar.sh"
+    echo
+
+fi
