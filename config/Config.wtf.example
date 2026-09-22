@@ -1,0 +1,7 @@
+SET realmlist "login.twinstar-wow.com"
+SET locale "enUS"
+SET installLocale "enUS"
+SET gxApi "D3D9"
+SET hwDetect "0"
+SET gxWindow "1"
+SET gxMaximize "1"

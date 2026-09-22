@@ -1,0 +1,31 @@
+.DS_Store
+
+# Game/client files
+Wow.exe
+Wow-64.exe
+Data/
+Cache/
+WTF/
+Interface/
+Screenshots/
+Logs/
+
+# Wine
+prefix/
+prefix-wine11/
+*.reg
+
+# Microsoft/runtime installers
+*.exe
+*.msi
+
+# Archives
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.dmg
+
+# Local logs
+*.log
