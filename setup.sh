@@ -15,13 +15,13 @@ echo "This setup will:"
 echo
 echo "  1. Check Rosetta and install Wine Staging"
 echo "  2. Create or reuse a dedicated Wine prefix"
-echo "  3. Install the Microsoft .NET 8 Desktop Runtime"
-echo "  4. Download the latest TwinStar Launcher"
-echo "  5. Start TwinStar so it can download WoW"
-echo "  6. Configure the Wine environment for WoW"
+echo "  3. Isolate Wine user folders from macOS"
+echo "  4. Download the MoP 5.4.8 client"
+echo "  5. Configure the environment for WoW"
 echo
 echo "No World of Warcraft files are distributed by"
-echo "this project."
+echo "this project. Game files are downloaded from"
+echo "third-party servers during setup."
 echo
 
 # ------------------------------------------------------------
@@ -34,11 +34,11 @@ echo
 chmod +x "$SCRIPTS_DIR"/*.sh
 
 REQUIRED_SCRIPTS=(
+    "common.sh"
     "install-wine.sh"
     "create-prefix.sh"
-    "install-dotnet.sh"
-    "install-twinstar.sh"
     "isolate-user-folders.sh"
+    "download-client.sh"
     "run-wow.sh"
 )
 
@@ -82,7 +82,7 @@ echo "  $WINE"
 echo
 
 # ------------------------------------------------------------
-# Prefix
+# Step 2 - Prefix
 # ------------------------------------------------------------
 
 echo "=================================================="
@@ -102,81 +102,59 @@ echo "  $WINEPREFIX"
 echo
 
 # ------------------------------------------------------------
-# .NET
+# Step 3 - macOS folder isolation
 # ------------------------------------------------------------
 
 echo "=================================================="
-echo " Step 3/4 - .NET 8 Desktop Runtime"
+echo " Step 3/4 - Wine Folder Isolation"
 echo "=================================================="
 echo
 
-"$SCRIPTS_DIR/install-dotnet.sh"
-
-echo
-
-# ------------------------------------------------------------
-# TwinStar
-# ------------------------------------------------------------
-
-echo "=================================================="
-echo " Step 4/4 - TwinStar Launcher"
-echo "=================================================="
-echo
-
-"$SCRIPTS_DIR/install-twinstar.sh"
+"$SCRIPTS_DIR/isolate-user-folders.sh"
 
 echo
 
 # ------------------------------------------------------------
-# Find WoW
+# Step 4 - Download WoW
 # ------------------------------------------------------------
 
 echo "=================================================="
-echo " Checking WoW Installation"
+echo " Step 4/4 - MoP 5.4.8 Client"
 echo "=================================================="
 echo
 
-WOW_EXE="$(
-    find "$WINEPREFIX/drive_c" \
-        -type f \
-        -name "Wow-64.exe" \
-        -print \
-        -quit 2>/dev/null || true
-)"
+"$SCRIPTS_DIR/download-client.sh"
 
-if [[ -z "$WOW_EXE" ]]; then
-    echo "Wow-64.exe was not found."
+echo
+
+# ------------------------------------------------------------
+# Verify WoW
+# ------------------------------------------------------------
+
+echo "=================================================="
+echo " Verifying WoW Installation"
+echo "=================================================="
+echo
+
+WOW_EXE="$WINEPREFIX/drive_c/WoW/Wow-64.exe"
+
+if [[ ! -f "$WOW_EXE" ]]; then
+    echo "ERROR: Wow-64.exe was not found:"
     echo
-    echo "If TwinStar has not finished downloading the"
-    echo "client, reopen it with:"
+    echo "  $WOW_EXE"
     echo
-    echo "  ./scripts/install-twinstar.sh"
+    echo "The client download may not have completed."
     echo
-    echo "Once the download is complete, run:"
+    echo "Resume it with:"
     echo
-    echo "  ./scripts/isolate-user-folders.sh"
-    echo "  ./scripts/run-wow.sh"
-    echo
-    exit 0
+    echo "  ./scripts/download-client.sh"
+    exit 1
 fi
 
 export WOW_EXE
 
 echo "WoW client detected:"
 echo "  $WOW_EXE"
-echo
-
-# ------------------------------------------------------------
-# macOS folder isolation
-# ------------------------------------------------------------
-
-echo "=================================================="
-echo " Final Configuration"
-echo "=================================================="
-echo
-
-"$SCRIPTS_DIR/isolate-user-folders.sh"
-
 echo
 
 # ------------------------------------------------------------
