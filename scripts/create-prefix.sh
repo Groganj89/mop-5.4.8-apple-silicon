@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
@@ -26,11 +26,19 @@ mkdir -p "$(dirname "$TARGET_PREFIX")"
 
 export WINEPREFIX="$TARGET_PREFIX"
 
+if [[ -d "$WINEPREFIX/drive_c" ]]; then
+    echo "Existing Wine prefix detected."
+    echo "Initialising/updating prefix..."
+else
+    echo "Creating Wine prefix..."
+fi
+
+echo
+
 "$WINE" wineboot
 
 echo
-echo "Prefix created successfully:"
+echo "Wine prefix ready:"
 echo
 echo "  $WINEPREFIX"
 echo
-echo "Next: install the Windows x64 .NET 8 Desktop Runtime."

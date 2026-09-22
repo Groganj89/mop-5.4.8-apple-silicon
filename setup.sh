@@ -17,7 +17,6 @@ echo "  1. Check Rosetta and install Wine Staging"
 echo "  2. Create or reuse a dedicated Wine prefix"
 echo "  3. Isolate Wine user folders from macOS"
 echo "  4. Download the MoP 5.4.8 client"
-echo "  5. Configure the environment for WoW"
 echo
 echo "No World of Warcraft files are distributed by"
 echo "this project. Game files are downloaded from"
@@ -73,7 +72,6 @@ echo
 source "$SCRIPTS_DIR/common.sh"
 
 find_wine
-
 export WINE
 
 echo "Using Wine:"
