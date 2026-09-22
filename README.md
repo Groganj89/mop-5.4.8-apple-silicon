@@ -2,51 +2,76 @@
 
 Run the Windows **World of Warcraft: Mists of Pandaria 5.4.8 (build 18414)** client on Apple Silicon Macs using Wine.
 
-This project documents and provides helper scripts for a working Apple Silicon configuration originally tested with the **TwinStar / Helios** Mists of Pandaria client.
+This project provides an automated setup and documents a working compatibility configuration originally developed and tested using the **TwinStar / Helios** Mists of Pandaria client.
 
-No World of Warcraft game files, Blizzard assets, TwinStar files, Wine binaries, or Microsoft runtimes are distributed by this repository.
+The goal is simple:
+
+```text
+Clone → Setup → Download WoW → Play
+```
+
+No World of Warcraft game files, Blizzard assets, TwinStar binaries, Wine binaries, or Microsoft runtimes are distributed by this repository.
 
 ---
 
-## Status
+## Current Status
 
-### Tested and working
+### Confirmed working
 
 | Component | Tested configuration |
 |---|---|
 | Mac | MacBook Air |
-| SoC | Apple M1 |
-| Architecture | Apple Silicon / Rosetta 2 |
+| Apple Silicon | M1 |
+| Architecture | ARM64 + Rosetta 2 |
 | macOS | macOS 26 |
 | Wine | Wine Staging 11.17 |
 | WoW | Mists of Pandaria 5.4.8 |
 | Build | 18414 |
-| Executable | `Wow-64.exe` |
+| Client | 64-bit `Wow-64.exe` |
 | Server | TwinStar / Helios |
 | Graphics API | Direct3D 9 |
 | Graphics backend | WineD3D |
 
-The tested client successfully:
+The tested configuration successfully:
 
-- Launches on Apple Silicon
-- Connects to TwinStar
+- Launches the TwinStar Launcher
+- Downloads and updates the WoW client
+- Launches `Wow-64.exe`
+- Connects to TwinStar / Helios
 - Logs into an account
 - Reaches character selection
 - Enters the game world
 - Renders 3D graphics
 - Plays audio
-- Runs in macOS fullscreen
-- Launches from a normal macOS `.app`
+- Supports macOS fullscreen
+- Can be wrapped in a normal macOS `.app`
 
-Other Apple Silicon Macs and macOS versions may also work, but have not yet been verified.
+Testing on additional Apple Silicon generations is welcome.
 
 ---
 
 # Quick Start
 
-## 1. Install Rosetta 2
+## Requirements
 
-Wine runs the x86-64 WoW client through Rosetta.
+You need:
+
+- An Apple Silicon Mac
+- macOS
+- Rosetta 2
+- Wine Staging
+- An internet connection
+- Sufficient disk space for the WoW client
+
+The known-good configuration was developed using:
+
+```text
+Wine Staging 11.17
+```
+
+---
+
+## 1. Install Rosetta 2
 
 If Rosetta is not already installed:
 
@@ -54,295 +79,198 @@ If Rosetta is not already installed:
 softwareupdate --install-rosetta --agree-to-license
 ```
 
+If Rosetta is already present, macOS will simply report that it is installed.
+
 ---
 
 ## 2. Install Wine Staging
 
-The known-good configuration uses:
+Install a current Wine Staging build for macOS.
 
-```text
-Wine Staging 11.17
-```
+Wine does **not** need to be installed in a specific directory.
 
-Wine does **not** need to be installed in a specific location.
-
-The helper scripts automatically check several common locations, including:
+The setup scripts automatically search common locations including:
 
 ```text
 ~/Games/Wine/Wine Staging.app
 /Applications/Wine Staging.app
 ~/Applications/Wine Staging.app
 /opt/homebrew/bin/wine
+/opt/homebrew/bin/wine64
 /usr/local/bin/wine
+/usr/local/bin/wine64
 ```
 
-They will also check the current `PATH`.
+The user's `PATH` is also checked.
 
-You can explicitly specify Wine if necessary:
+If Wine is installed somewhere unusual, specify it manually:
 
 ```bash
 export WINE="/path/to/wine"
 ```
 
-Verify your Wine installation with:
-
-```bash
-"$WINE" --version
-```
-
-when using a custom path.
-
 ---
 
-## 3. Clone this repository
+## 3. Clone the repository
 
 ```bash
 git clone https://github.com/Groganj89/mop-5.4.8-apple-silicon.git
 cd mop-5.4.8-apple-silicon
 ```
 
-Make the helper scripts executable:
-
-```bash
-chmod +x scripts/*.sh
-```
-
 ---
 
-## 4. Create a Wine prefix
+## 4. Run the automated setup
 
-Run:
+Make the setup script executable:
 
 ```bash
-./scripts/create-prefix.sh
+chmod +x setup.sh
 ```
 
-If no `WINEPREFIX` has been specified, a new prefix will be created at:
+Then run:
+
+```bash
+./setup.sh
+```
+
+The setup process will:
+
+1. Detect your Wine installation.
+2. Create or reuse a dedicated Wine prefix.
+3. Download and install the Microsoft .NET 8 Desktop Runtime.
+4. Download the latest official TwinStar Launcher.
+5. Start the TwinStar Launcher.
+6. Allow TwinStar to download/update the WoW 5.4.8 client.
+7. Detect `Wow-64.exe`.
+8. Isolate macOS protected user folders from the Wine prefix.
+9. Prepare the client for the known-good WineD3D configuration.
+
+By default, the Wine prefix is created at:
 
 ```text
 ~/Games/WoW-MoP/prefix
 ```
 
-Advanced users can choose another location:
-
-```bash
-export WINEPREFIX="$HOME/Games/My-WoW-Prefix"
-./scripts/create-prefix.sh
-```
-
 ---
 
-## 5. Install the .NET 8 Desktop Runtime
+# Downloading World of Warcraft
 
-The TwinStar Launcher requires the **Windows x64 .NET 8 Desktop Runtime**.
+The setup script downloads and launches the **official TwinStar Launcher**.
 
-Download it directly from Microsoft.
+TwinStar itself is responsible for downloading and updating the World of Warcraft client.
 
-Once downloaded, install it into your Wine prefix.
+When choosing an installation location in the TwinStar Launcher, use a location inside the Wine `C:` drive.
 
-For example:
-
-```bash
-export WINEPREFIX="$HOME/Games/WoW-MoP/prefix"
-```
-
-Then run the installer using the same Wine installation used to create the prefix.
-
-The required runtime includes:
+Recommended:
 
 ```text
-Microsoft.NETCore.App 8.x
-Microsoft.WindowsDesktop.App 8.x
+C:\WoW
 ```
 
-The Windows **Desktop Runtime** is important because the TwinStar Launcher uses WPF.
+This corresponds to:
 
----
+```text
+~/Games/WoW-MoP/prefix/drive_c/WoW
+```
 
-## 6. Download/install the MoP client
+when using the default prefix.
 
-Obtain the Mists of Pandaria client from your server/provider.
+Allow TwinStar to finish downloading the complete client before closing the launcher.
 
-For TwinStar / Helios, use the official TwinStar launcher and allow it to download/update the client.
-
-This repository does **not** redistribute the launcher or game client.
-
-The scripts expect the 64-bit client:
+The resulting installation should contain:
 
 ```text
 Wow-64.exe
 ```
 
-to exist in the Wine prefix.
-
-For example:
-
-```text
-~/Games/WoW-MoP/prefix/drive_c/Wow-64.exe
-```
-
-The scripts can also detect the original development/test location:
-
-```text
-~/Games/TwinStar/prefix-wine11/drive_c/Wow-64.exe
-```
+The setup script will attempt to locate it automatically.
 
 ---
 
-# Important: isolate macOS user folders
+# Launching WoW
 
-This was one of the key discoveries while getting the client working.
-
-By default, Wine may map Windows folders such as:
-
-```text
-C:\users\<username>\Desktop
-C:\users\<username>\Documents
-C:\users\<username>\Pictures
-C:\users\<username>\Music
-C:\users\<username>\Videos
-```
-
-directly to the equivalent macOS directories.
-
-On macOS, these locations can be protected by privacy controls.
-
-During testing, the client encountered macOS permission prompts and startup problems while these directories were mapped into the Wine prefix.
-
-Run:
-
-```bash
-./scripts/isolate-user-folders.sh
-```
-
-The script checks:
-
-```text
-Desktop
-Documents
-Pictures
-Music
-Videos
-```
-
-and replaces Wine symlinks to macOS locations with normal directories stored inside the Wine prefix.
-
-### Downloads is intentionally left unchanged
-
-The script does **not** alter:
-
-```text
-Downloads
-```
-
-because launchers/installers may still be running from the user's macOS Downloads directory.
-
-You can inspect the remaining mappings with:
-
-```bash
-find "$WINEPREFIX/drive_c/users/$USER" -maxdepth 1 -type l -ls
-```
-
----
-
-# Configure World of Warcraft
-
-An example configuration is provided at:
-
-```text
-config/Config.wtf.example
-```
-
-The most important graphics setting is:
-
-```text
-SET gxApi "D3D9"
-```
-
-The tested MoP 5.4.8 client uses Direct3D 9.
-
-A minimal configuration looks like:
-
-```text
-SET locale "enUS"
-SET installLocale "enUS"
-SET gxApi "D3D9"
-SET hwDetect "0"
-SET gxWindow "1"
-SET gxMaximize "1"
-```
-
-Server-specific settings such as `realmlist` should be configured for your own server.
-
-Do not copy account names, character information or other personal settings into a public configuration file.
-
----
-
-# Launch WoW
-
-Once `Wow-64.exe` has been installed, simply run:
+Once the client has been downloaded:
 
 ```bash
 ./scripts/run-wow.sh
 ```
 
-The script automatically attempts to detect:
+The launcher automatically detects:
 
 - Wine
 - The Wine prefix
 - `Wow-64.exe`
 
-It then launches WoW using the critical compatibility override:
+It then launches the game using:
 
-```bash
-WINEDLLOVERRIDES="d3d9=b"
+```text
+WINEDLLOVERRIDES=d3d9=b
 ```
 
-This tells Wine to use its **builtin D3D9 implementation** rather than a native `d3d9.dll` such as DXVK.
+This is important.
+
+It forces Wine's **builtin Direct3D 9 implementation** instead of allowing a native `d3d9.dll`, such as DXVK, to take over.
 
 ---
 
-# Why WineD3D instead of DXVK?
+# Why WineD3D?
 
-This was the main graphics compatibility issue discovered during testing.
+Getting the graphics backend working was the main compatibility problem encountered during development.
 
-The desired graphics path initially looked like:
+WoW 5.4.8 uses:
+
+```text
+Direct3D 9
+```
+
+DXVK was initially tested as the D3D9 implementation.
+
+The intended path was:
 
 ```text
 WoW 5.4.8
-      ↓
+     ↓
 Direct3D 9
-      ↓
+     ↓
 DXVK
-      ↓
+     ↓
 Vulkan
-      ↓
+     ↓
 MoltenVK
-      ↓
+     ↓
 Metal
-      ↓
-Apple M1
+     ↓
+Apple Silicon GPU
 ```
 
 DXVK successfully:
 
 - Loaded
-- Detected the Apple M1
+- Detected the Apple M1 GPU
 - Detected MoltenVK
-- Enumerated Vulkan extensions
-- Enumerated GPU features
+- Enumerated Vulkan capabilities
 - Began Vulkan device creation
 
-However, MoltenVK then reported:
+However, MoltenVK then returned:
 
 ```text
 VK_ERROR_FEATURE_NOT_PRESENT
 ```
 
-including:
+During testing, errors included:
 
 ```text
 vkCreateDevice(): Requested physical device feature
+specified by the 5th flag in VkPhysicalDeviceFeatures
+is not available on this device.
+```
+
+and:
+
+```text
+vkCreateDevice(): Requested physical device feature
+specified by the 39th flag in VkPhysicalDeviceFeatures
 is not available on this device.
 ```
 
@@ -366,85 +294,191 @@ Please make sure DirectX 9.0c is installed and your video
 drivers are up-to-date.
 ```
 
-### This was not a missing DirectX 9.0c installation
+## DirectX 9.0c was not the problem
 
-Installing DirectX 9.0c was therefore not the solution.
+That WoW error is misleading in this configuration.
 
-Instead, bypassing DXVK immediately allowed the client to launch:
+Installing DirectX 9.0c was **not** required.
+
+The actual failure was DXVK being unable to create the required Vulkan device through MoltenVK.
+
+The breakthrough was launching WoW with:
 
 ```bash
 WINEDLLOVERRIDES="d3d9=b" \
 "$WINE" "./Wow-64.exe"
 ```
 
-The working graphics path is therefore:
+This bypasses DXVK for D3D9.
+
+The confirmed working path is:
 
 ```text
 WoW 5.4.8
-      ↓
+     ↓
 Direct3D 9
-      ↓
+     ↓
 Wine builtin D3D9
-      ↓
+     ↓
 WineD3D
-      ↓
+     ↓
 macOS graphics stack
-      ↓
+     ↓
 Apple Silicon GPU
+```
+
+This override is automatically applied by:
+
+```bash
+./scripts/run-wow.sh
 ```
 
 ---
 
-# Resolution and fullscreen
+# macOS Protected Folders
 
-There are currently some quirks with resolution enumeration and fullscreen mode.
+Another important issue discovered during testing involved Wine's default Windows user-directory mappings.
 
-## No resolutions listed
+Wine may create mappings such as:
 
-During testing, a normal Wine launch sometimes caused WoW to report:
+```text
+C:\users\<username>\Desktop
+C:\users\<username>\Documents
+C:\users\<username>\Pictures
+C:\users\<username>\Music
+C:\users\<username>\Videos
+```
+
+as symbolic links to the equivalent directories in:
+
+```text
+/Users/<username>/
+```
+
+On modern macOS versions, some of these directories are protected by macOS privacy controls.
+
+During testing, these mappings resulted in privacy prompts and contributed to WoW failing to progress normally during startup.
+
+The project therefore includes:
+
+```bash
+./scripts/isolate-user-folders.sh
+```
+
+This replaces Wine symlinks for:
+
+```text
+Desktop
+Documents
+Pictures
+Music
+Videos
+```
+
+with normal directories contained entirely inside the Wine prefix.
+
+## Downloads is intentionally preserved
+
+The script does **not** alter the Wine `Downloads` mapping.
+
+This is intentional because downloaded installers and launcher files may still need to be accessed from the host macOS Downloads directory.
+
+You can inspect the mappings yourself with:
+
+```bash
+find "$WINEPREFIX/drive_c/users/$USER" \
+    -maxdepth 1 \
+    -type l \
+    -ls
+```
+
+---
+
+# World of Warcraft Configuration
+
+An example configuration is included at:
+
+```text
+config/Config.wtf.example
+```
+
+The most important graphics setting is:
+
+```text
+SET gxApi "D3D9"
+```
+
+A minimal configuration looks like:
+
+```text
+SET locale "enUS"
+SET installLocale "enUS"
+SET gxApi "D3D9"
+SET hwDetect "0"
+SET gxWindow "1"
+SET gxMaximize "1"
+```
+
+Server-specific settings such as the `realmlist` should be configured for the server you use.
+
+Do not publish personal configuration values such as:
+
+```text
+accountName
+realmName
+lastCharacterIndex
+```
+
+when sharing your own `Config.wtf`.
+
+---
+
+# Resolution Detection
+
+Display-mode enumeration can behave strangely when WoW is launched normally through Wine.
+
+During testing, WoW sometimes generated:
 
 ```text
 SET gxResolution "0x0"
 ```
 
-The in-game resolution list would consequently be empty.
+and displayed no selectable resolutions in the graphics menu.
 
-Launching through a Wine virtual desktop caused display modes to be enumerated correctly:
+A Wine virtual desktop caused display modes to enumerate correctly.
+
+Use:
 
 ```bash
 ./scripts/run-wow-desktop.sh
 ```
 
-The equivalent command is:
+The underlying launch method is:
 
 ```bash
 WINEDLLOVERRIDES="d3d9=b" \
 "$WINE" explorer /desktop=WoW,1920x1080 "./Wow-64.exe"
 ```
 
-On the tested M1 MacBook Air, Wine correctly detected the macOS logical Retina resolution as:
+On the tested M1 MacBook Air, Wine correctly exposed the macOS logical Retina resolution:
 
 ```text
 1680x1050
 ```
 
-and exposed the available display modes to WoW.
+along with the other supported display modes.
 
 ---
 
-## Fullscreen
+# Fullscreen
 
-WoW's own Direct3D fullscreen switching did not work reliably in the tested configuration.
+WoW's own Direct3D fullscreen switching was unreliable during testing.
 
-There is a much simpler solution.
+The simplest working solution is:
 
-Leave WoW in:
-
-```text
-Windowed
-```
-
-Then click the **green macOS window button**.
+1. Leave WoW in **Windowed** mode.
+2. Launch the game normally.
+3. Click the **green macOS window button**.
 
 macOS will place the Wine/WoW window into native macOS fullscreen.
 
@@ -452,47 +486,15 @@ This provides fullscreen gameplay while allowing WoW to remain in its stable win
 
 ---
 
-# Create a normal macOS application
+# Graphics Performance
 
-WoW can be launched from Finder, Launchpad or the Dock without opening Terminal.
+WineD3D successfully runs the game but introduces additional translation overhead compared with native Direct3D on Windows.
 
-Instructions are available here:
+On the tested M1 MacBook Air, moderate graphics settings perform significantly better than the highest presets.
 
-```text
-docs/macos-app.md
-```
+Instead of simply setting the entire graphics preset to Low, consider adjusting expensive settings individually.
 
-The resulting application can appear in:
-
-```text
-/Applications
-```
-
-just like any other macOS application.
-
-The launcher internally starts WoW using:
-
-```text
-WINEDLLOVERRIDES=d3d9=b
-```
-
-so the known-good WineD3D configuration is preserved.
-
-A custom icon can also be applied through Finder.
-
----
-
-# Graphics performance
-
-WineD3D successfully runs the game, but its performance characteristics are different from running Direct3D natively on Windows.
-
-The overall MoP graphics slider can therefore become expensive at higher presets.
-
-On the tested M1 MacBook Air, lower/moderate presets were substantially smoother than the higher presets.
-
-Rather than simply reducing everything to Low, consider tuning expensive options individually.
-
-Good candidates include:
+Settings worth testing include:
 
 ```text
 Shadows
@@ -505,62 +507,269 @@ Water Detail
 Anti-Aliasing
 ```
 
-Textures can often remain relatively high without the same performance impact as effects such as shadows and SSAO.
+Texture quality can often remain relatively high without the same performance penalty as effects such as shadows and SSAO.
 
 Performance tuning is still ongoing.
 
 ---
 
-# Automatic detection
+# macOS Application Launcher
 
-The scripts share:
+Once everything is working, WoW can be wrapped in a normal macOS `.app`.
+
+Open **Script Editor** and create a script containing:
+
+```applescript
+do shell script "export WINEPREFIX=\"$HOME/Games/WoW-MoP/prefix\"; " & ¬
+"export WINE=\"$HOME/Games/Wine/Wine Staging.app/Contents/Resources/wine/bin/wine\"; " & ¬
+"cd \"$WINEPREFIX/drive_c/WoW\"; " & ¬
+"WINEDLLOVERRIDES=\"d3d9=b\" \"$WINE\" \"./Wow-64.exe\" >/tmp/wow-mop.log 2>&1 &"
+```
+
+Adjust the Wine and WoW paths if your installation differs.
+
+Choose:
+
+```text
+File → Export
+```
+
+Then use:
+
+```text
+File Format: Application
+Stay open after run handler: Off
+```
+
+The resulting application can be placed in:
+
+```text
+/Applications
+```
+
+and launched normally through Finder, Spotlight, Launchpad, or the Dock.
+
+## Custom icon
+
+A custom icon can be assigned using Finder:
+
+1. Open an image in Preview.
+2. Press `Command-A`.
+3. Press `Command-C`.
+4. Select the application in Finder.
+5. Press `Command-I`.
+6. Click the application icon in the top-left corner.
+7. Press `Command-V`.
+
+If Finder or the Dock continues showing an old icon:
+
+```bash
+killall Finder
+killall Dock
+```
+
+Do not redistribute copyrighted World of Warcraft artwork as part of this repository unless you have permission to do so.
+
+---
+
+# Manual Setup
+
+The automated setup is recommended:
+
+```bash
+./setup.sh
+```
+
+However, every stage remains available separately.
+
+## Create the Wine prefix
+
+```bash
+./scripts/create-prefix.sh
+```
+
+## Install .NET 8 Desktop Runtime
+
+```bash
+./scripts/install-dotnet.sh
+```
+
+This downloads and installs the current Windows x64 **Microsoft .NET 8 Desktop Runtime** into the Wine prefix.
+
+The Desktop Runtime is required because the TwinStar Launcher uses WPF.
+
+## Install/run TwinStar
+
+```bash
+./scripts/install-twinstar.sh
+```
+
+This downloads the current official TwinStar Launcher and starts it through Wine.
+
+TwinStar then handles downloading and updating the WoW client.
+
+## Isolate macOS user folders
+
+```bash
+./scripts/isolate-user-folders.sh
+```
+
+## Launch WoW
+
+```bash
+./scripts/run-wow.sh
+```
+
+## Launch using Wine virtual desktop
+
+```bash
+./scripts/run-wow-desktop.sh
+```
+
+---
+
+# Automatic Detection
+
+The helper scripts share:
 
 ```text
 scripts/common.sh
 ```
 
-which performs environment discovery.
+which performs Wine, prefix, and client discovery.
 
-## Wine detection
+## Wine
 
-The scripts check common Wine locations and the user's `PATH`.
+Wine is automatically detected from several common installation locations.
 
-You can override detection at any time:
+Detection can be overridden with:
 
 ```bash
 export WINE="/custom/path/to/wine"
 ```
 
-## Prefix detection
+## Wine prefix
 
-Known/common prefix locations are checked automatically.
-
-If a prefix contains:
+The default project prefix is:
 
 ```text
-drive_c/Wow-64.exe
+~/Games/WoW-MoP/prefix
 ```
 
-it is preferred over a generic Wine prefix.
-
-You can override detection with:
+A custom prefix can be specified before running setup:
 
 ```bash
-export WINEPREFIX="/custom/path/to/prefix"
+export WINEPREFIX="$HOME/Games/My-MoP-Prefix"
+./setup.sh
 ```
 
-## WoW detection
+Existing supported prefixes containing `Wow-64.exe` are preferred when using the standalone helper scripts.
+
+## WoW executable
 
 The scripts look for:
 
 ```text
-$WINEPREFIX/drive_c/Wow-64.exe
+Wow-64.exe
 ```
 
-You can explicitly specify another executable with:
+inside the selected Wine prefix.
+
+An explicit executable can also be supplied:
 
 ```bash
 export WOW_EXE="/path/to/Wow-64.exe"
+./scripts/run-wow.sh
+```
+
+---
+
+# Project Structure
+
+```text
+mop-5.4.8-apple-silicon/
+├── README.md
+├── LICENSE
+├── .gitignore
+├── setup.sh
+│
+├── config/
+│   └── Config.wtf.example
+│
+└── scripts/
+    ├── common.sh
+    ├── create-prefix.sh
+    ├── install-dotnet.sh
+    ├── install-twinstar.sh
+    ├── isolate-user-folders.sh
+    ├── run-wow.sh
+    └── run-wow-desktop.sh
+```
+
+---
+
+# Troubleshooting
+
+## Wine cannot be found
+
+If setup reports:
+
+```text
+ERROR: Wine could not be found.
+```
+
+locate your Wine executable and specify it manually:
+
+```bash
+export WINE="/path/to/wine"
+./setup.sh
+```
+
+---
+
+## .NET installation fails
+
+The TwinStar Launcher requires:
+
+```text
+Microsoft.WindowsDesktop.App 8.x
+```
+
+The installer script verifies the runtime after installation.
+
+You can manually inspect installed runtimes with:
+
+```bash
+"$WINE" \
+"C:\\Program Files\\dotnet\\dotnet.exe" \
+--list-runtimes
+```
+
+You should see an entry similar to:
+
+```text
+Microsoft.WindowsDesktop.App 8.x.x
+```
+
+---
+
+## TwinStar opens but WoW is not detected
+
+Make sure the TwinStar Launcher has completely finished downloading the game.
+
+The Wine prefix must contain:
+
+```text
+Wow-64.exe
+```
+
+You can search for it manually:
+
+```bash
+find "$WINEPREFIX/drive_c" \
+    -type f \
+    -name "Wow-64.exe" \
+    -print
 ```
 
 Then run:
@@ -571,65 +780,18 @@ Then run:
 
 ---
 
-# Project structure
+## WoW hangs before opening a window
 
-```text
-mop-5.4.8-apple-silicon/
-├── README.md
-├── LICENSE
-├── .gitignore
-│
-├── config/
-│   └── Config.wtf.example
-│
-├── docs/
-│   ├── macos-app.md
-│   └── troubleshooting.md
-│
-└── scripts/
-    ├── common.sh
-    ├── create-prefix.sh
-    ├── isolate-user-folders.sh
-    ├── run-wow.sh
-    └── run-wow-desktop.sh
-```
-
----
-
-# Troubleshooting
-
-More detailed troubleshooting information is available in:
-
-```text
-docs/troubleshooting.md
-```
-
-Some useful checks are included below.
-
-## Check Wine
-
-```bash
-./scripts/run-wow.sh
-```
-
-will print the detected Wine installation and version before starting the game.
-
-Known-good:
-
-```text
-wine-11.17 (Staging)
-```
-
----
-
-## Check user-folder mappings
+Check Wine's Windows user-folder mappings:
 
 ```bash
 find "$WINEPREFIX/drive_c/users/$USER" \
-    -maxdepth 1 -type l -ls
+    -maxdepth 1 \
+    -type l \
+    -ls
 ```
 
-If Desktop, Documents, Pictures, Music or Videos point directly into `/Users/...`, run:
+Then run:
 
 ```bash
 ./scripts/isolate-user-folders.sh
@@ -637,68 +799,106 @@ If Desktop, Documents, Pictures, Music or Videos point directly into `/Users/...
 
 ---
 
-## 3D acceleration error
+## "Unable to start up 3D acceleration"
 
-If you see:
+If WoW reports:
 
 ```text
 World of Warcraft was unable to start up 3D acceleration.
 ```
 
-and DXVK is installed, try:
+do **not** immediately install DirectX 9.0c.
+
+If DXVK is present, bypass it:
 
 ```bash
 WINEDLLOVERRIDES="d3d9=b" \
 "$WINE" "./Wow-64.exe"
 ```
 
-or simply use:
+The supplied launcher already does this automatically:
 
 ```bash
 ./scripts/run-wow.sh
 ```
 
-which applies this override automatically.
+---
+
+## No resolutions appear
+
+Try:
+
+```bash
+./scripts/run-wow-desktop.sh
+```
+
+This runs WoW inside a Wine virtual desktop and can cause the correct macOS display modes to be enumerated.
 
 ---
 
-# Tested vs expected
+## Fullscreen does not work
 
-This repository currently documents **one confirmed working Apple Silicon configuration**.
+Leave WoW in Windowed mode and use the green macOS window button.
 
-Confirmed:
+This was more reliable during testing than WoW's native fullscreen mode switching.
+
+---
+
+# Clean Installation Testing
+
+This project was developed by debugging an existing working environment, so clean-install testing is particularly valuable.
+
+If testing a new Mac, please:
+
+1. Clone the repository fresh.
+2. Follow this README without manually compensating for errors.
+3. Run `./setup.sh`.
+4. Report any point where the documented process differs from reality.
+
+This helps identify assumptions accidentally inherited from the original development machine.
+
+---
+
+# Compatibility Testing
+
+The initial confirmed configuration is:
 
 ```text
-Apple M1
-macOS 26
-Wine Staging 11.17
-WoW 5.4.8 build 18414
-TwinStar / Helios
-WineD3D
-D3D9
-Wow-64.exe
+Mac: MacBook Air
+SoC: Apple M1
+macOS: macOS 26
+Wine: Wine Staging 11.17
+WoW: 5.4.8.18414
+Client: TwinStar / Helios
+Executable: Wow-64.exe
+Graphics API: Direct3D 9
+Backend: WineD3D
 ```
 
-Other configurations should currently be considered experimental until reported by users.
-
-In particular, testing would be useful on:
+Testing is particularly wanted on:
 
 - M1 Pro
 - M1 Max
 - M1 Ultra
 - M2
-- M2 Pro / Max / Ultra
-- M3 family
-- M4 family
-- Other macOS releases
-- Other Wine releases
-- Other MoP 5.4.8 distributions
+- M2 Pro
+- M2 Max
+- M2 Ultra
+- M3
+- M3 Pro
+- M3 Max
+- M4
+- M4 Pro
+- M4 Max
+- Different macOS releases
+- Different Wine releases
+- Other MoP 5.4.8 client distributions
 
 ---
 
-# Reporting compatibility
+# Reporting Compatibility
 
-If you test another configuration, please open an issue and include:
+If you successfully test another configuration, please open a GitHub issue and include:
 
 ```text
 Mac model:
@@ -713,44 +913,45 @@ Resolution:
 Result:
 ```
 
-If the game fails, logs are extremely useful.
+For failures, include the exact Terminal output or relevant Wine logs where possible.
 
 ---
 
 # Contributing
 
-Pull requests and compatibility reports are welcome.
+Pull requests, compatibility reports, bug reports, and documentation improvements are welcome.
 
-Useful contributions include:
+Particularly useful contributions include:
 
-- Testing other Apple Silicon generations
-- Testing newer Wine versions
-- Improving automatic Wine detection
-- Improving prefix discovery
+- Testing additional Apple Silicon generations
+- Testing newer Wine releases
+- Improving Wine detection
+- Improving prefix/client discovery
 - Graphics-performance tuning
-- Fullscreen/display improvements
-- Launcher improvements
+- Display/fullscreen improvements
+- Setup automation
 - Documentation corrections
 
-Please do not submit copyrighted World of Warcraft client files or proprietary third-party binaries.
+Please do **not** submit:
+
+- World of Warcraft client files
+- Blizzard game data
+- TwinStar binaries
+- Microsoft runtime binaries
+- Wine binaries
+- Copyrighted game artwork
 
 ---
 
 # Legal
 
-This is an independent compatibility/documentation project.
+This is an independent compatibility and documentation project.
 
-It does **not** distribute:
-
-- World of Warcraft
-- Blizzard game data
-- TwinStar/Helios client files
-- Microsoft runtimes
-- Wine binaries
+This repository does **not** distribute World of Warcraft, Blizzard game data, TwinStar/Helios client files, Microsoft runtimes, or Wine binaries.
 
 Users must obtain all required third-party software themselves from the appropriate sources.
 
-World of Warcraft, Warcraft, Mists of Pandaria, Blizzard Entertainment and related names, artwork and trademarks are the property of their respective owners.
+World of Warcraft, Warcraft, Mists of Pandaria, Blizzard Entertainment, and related names, artwork, and trademarks are the property of their respective owners.
 
 TwinStar / Helios is not affiliated with this project.
 
