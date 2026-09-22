@@ -2,6 +2,17 @@
 
 set -euo pipefail
 
+WINE_VERSION="11.17"
+
+DOWNLOAD_URL="https://github.com/Gcenx/macOS_Wine_builds/releases/download/${WINE_VERSION}/wine-staging-${WINE_VERSION}-osx64.tar.xz"
+
+DOWNLOAD_DIR="$HOME/Downloads/WoW-MoP-Setup"
+ARCHIVE="$DOWNLOAD_DIR/wine-staging-${WINE_VERSION}-osx64.tar.xz"
+
+APPLICATIONS_DIR="$HOME/Applications"
+WINE_APP="$APPLICATIONS_DIR/Wine Staging.app"
+WINE_BIN="$WINE_APP/Contents/Resources/wine/bin/wine"
+
 echo
 echo "=================================================="
 echo " Wine Staging Installer"
@@ -9,31 +20,33 @@ echo "=================================================="
 echo
 
 # ------------------------------------------------------------
-# Check architecture
+# Architecture
 # ------------------------------------------------------------
 
 ARCH="$(uname -m)"
 
-echo "Mac architecture:"
+echo "Architecture:"
 echo "  $ARCH"
 echo
 
 if [[ "$ARCH" != "arm64" ]]; then
-    echo "WARNING: This project is intended for Apple Silicon."
-    echo "Detected architecture:"
-    echo "  $ARCH"
+    echo "WARNING: This project is designed for Apple Silicon."
     echo
 fi
 
 # ------------------------------------------------------------
-# Check Rosetta
+# Rosetta 2
 # ------------------------------------------------------------
 
+echo "Checking Rosetta 2..."
+echo
+
 if /usr/bin/pgrep oahd >/dev/null 2>&1; then
+
     echo "Rosetta 2 detected."
+
 else
-    echo "Rosetta 2 does not appear to be running/installed."
-    echo
+
     echo "Installing Rosetta 2..."
     echo
 
@@ -41,137 +54,178 @@ else
         --install-rosetta \
         --agree-to-license
 
-    echo
-    echo "Rosetta installation completed."
 fi
 
 echo
 
 # ------------------------------------------------------------
-# Check whether Wine already exists
+# Existing Wine
 # ------------------------------------------------------------
 
-WINE_CANDIDATES=(
+CANDIDATES=(
     "$HOME/Games/Wine/Wine Staging.app/Contents/Resources/wine/bin/wine"
-    "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
     "$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
+    "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
     "/opt/homebrew/bin/wine"
     "/usr/local/bin/wine"
 )
 
-for candidate in "${WINE_CANDIDATES[@]}"; do
+for candidate in "${CANDIDATES[@]}"; do
+
     if [[ -x "$candidate" ]]; then
-        echo "Wine is already installed:"
+
+        echo "Wine already installed:"
         echo "  $candidate"
         echo
+
         "$candidate" --version
+
         echo
-        echo "No Wine installation required."
         exit 0
+
     fi
+
 done
 
 if command -v wine >/dev/null 2>&1; then
-    echo "Wine is already available in PATH:"
+
+    echo "Wine already available:"
     echo "  $(command -v wine)"
     echo
+
     wine --version
+
     exit 0
+
 fi
 
 # ------------------------------------------------------------
-# Check Homebrew
+# Download
 # ------------------------------------------------------------
 
-if command -v brew >/dev/null 2>&1; then
-    BREW="$(command -v brew)"
+echo "Wine Staging was not found."
+echo
+echo "Downloading Wine Staging $WINE_VERSION..."
+echo
+echo "Source:"
+echo "  $DOWNLOAD_URL"
+echo
 
-elif [[ -x "/opt/homebrew/bin/brew" ]]; then
-    BREW="/opt/homebrew/bin/brew"
+mkdir -p "$DOWNLOAD_DIR"
+mkdir -p "$APPLICATIONS_DIR"
 
-elif [[ -x "/usr/local/bin/brew" ]]; then
-    BREW="/usr/local/bin/brew"
+curl \
+    --fail \
+    --location \
+    --progress-bar \
+    "$DOWNLOAD_URL" \
+    --output "$ARCHIVE"
 
-else
-    echo "Homebrew is not installed."
-    echo
-    echo "Installing Homebrew..."
-    echo
-    echo "Homebrew may ask for your macOS administrator password."
-    echo
-
-    /bin/bash -c \
-        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-    if [[ -x "/opt/homebrew/bin/brew" ]]; then
-        BREW="/opt/homebrew/bin/brew"
-
-    elif [[ -x "/usr/local/bin/brew" ]]; then
-        BREW="/usr/local/bin/brew"
-
-    else
-        echo
-        echo "ERROR: Homebrew installation completed but brew"
-        echo "could not be located."
-        exit 1
-    fi
-fi
-
-echo "Homebrew:"
-echo "  $BREW"
-"$BREW" --version | head -n 1
+echo
+echo "Download complete."
 echo
 
 # ------------------------------------------------------------
-# Install Wine Staging
+# Extract
 # ------------------------------------------------------------
 
-echo "Installing Wine Staging..."
+echo "Extracting Wine..."
 echo
 
-"$BREW" install --cask wine@staging
+EXTRACT_DIR="$DOWNLOAD_DIR/wine-$WINE_VERSION"
 
+rm -rf "$EXTRACT_DIR"
+mkdir -p "$EXTRACT_DIR"
+
+tar -xJf "$ARCHIVE" -C "$EXTRACT_DIR"
+
+echo "Extraction complete."
 echo
 
 # ------------------------------------------------------------
-# Locate installed Wine
+# Locate Wine Staging.app
 # ------------------------------------------------------------
 
-WINE=""
+EXTRACTED_APP="$(
+    find "$EXTRACT_DIR" \
+        -type d \
+        -name "Wine Staging.app" \
+        -print \
+        -quit
+)"
 
-WINE_CANDIDATES=(
-    "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
-    "/opt/homebrew/bin/wine"
-    "/usr/local/bin/wine"
-)
+if [[ -z "$EXTRACTED_APP" ]]; then
 
-for candidate in "${WINE_CANDIDATES[@]}"; do
-    if [[ -x "$candidate" ]]; then
-        WINE="$candidate"
-        break
-    fi
-done
+    echo "ERROR: Wine Staging.app was not found"
+    echo "inside the downloaded archive."
+    echo
+    echo "Extracted contents:"
+    echo
 
-if [[ -z "$WINE" ]] && command -v wine >/dev/null 2>&1; then
-    WINE="$(command -v wine)"
-fi
+    find "$EXTRACT_DIR" -maxdepth 3 -print
 
-if [[ -z "$WINE" ]]; then
-    echo "ERROR: Wine installation completed but the Wine"
-    echo "executable could not be located."
     exit 1
+
 fi
+
+echo "Found:"
+echo "  $EXTRACTED_APP"
+echo
+
+# ------------------------------------------------------------
+# Install
+# ------------------------------------------------------------
+
+echo "Installing Wine Staging into:"
+echo "  $APPLICATIONS_DIR"
+echo
+
+rm -rf "$WINE_APP"
+
+cp -R "$EXTRACTED_APP" "$WINE_APP"
+
+# ------------------------------------------------------------
+# Remove quarantine
+# ------------------------------------------------------------
+
+echo "Removing downloaded-file quarantine attribute..."
+echo
+
+xattr -dr com.apple.quarantine "$WINE_APP" 2>/dev/null || true
+
+# ------------------------------------------------------------
+# Verify
+# ------------------------------------------------------------
+
+if [[ ! -x "$WINE_BIN" ]]; then
+
+    echo "ERROR: Wine was copied but the executable"
+    echo "could not be found:"
+    echo
+    echo "  $WINE_BIN"
+
+    exit 1
+
+fi
+
+echo "Verifying Wine..."
+echo
+
+"$WINE_BIN" --version
+
+echo
+
+# ------------------------------------------------------------
+# Complete
+# ------------------------------------------------------------
 
 echo "=================================================="
 echo " Wine Installation Complete"
 echo "=================================================="
 echo
-echo "Wine:"
-echo "  $WINE"
+echo "Installed:"
+echo "  $WINE_APP"
 echo
-
-"$WINE" --version
-
-echo
-echo "Wine Staging is ready."
+echo "Executable:"
+echo "  $WINE_BIN"
 echo
