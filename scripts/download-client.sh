@@ -302,15 +302,16 @@ locale_from_path = None
 
 def manifest_filename_locale(name):
     """
-    Reproduce TwinStar's locale detection from manifest filenames.
+    TwinStar:
+        ^Data/([^/]+)/
 
-    We only care about WoW locale identifiers such as enUS, enGB,
-    deDE, frFR, etc.
+    The first directory directly beneath Data/ is treated as
+    the record's locale.
     """
-    matches = re.findall(r'(?i)(?:^|[-_/])([a-z]{2}[A-Z]{2})(?:[-_.\\/]|$)', name)
+    match = re.match(r"^Data/([^/]+)/", name, re.IGNORECASE)
 
-    if matches:
-        return matches[-1]
+    if match:
+        return match.group(1)
 
     return None
 
