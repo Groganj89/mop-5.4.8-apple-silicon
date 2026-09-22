@@ -98,7 +98,7 @@ when using a custom path.
 
 ```bash
 git clone https://github.com/Groganj89/mop-5.4.8-apple-silicon.git
-cd wow-mop-apple-silicon
+cd mop-5.4.8-apple-silicon
 ```
 
 Make the helper scripts executable:
@@ -574,7 +574,7 @@ Then run:
 # Project structure
 
 ```text
-wow-mop-apple-silicon/
+mop-5.4.8-apple-silicon/
 ├── README.md
 ├── LICENSE
 ├── .gitignore
