@@ -276,23 +276,21 @@ echo
 
 
 # ------------------------------------------------------------
-# Stage 5 - Parse manifest
-#
-# IMPORTANT:
-# For the first test we deliberately STOP before downloading
-# ~22 GB of data.
-#
-# This validates discovery and locale filtering first.
+# Stage 5 - Parse manifest and download client data
 # ------------------------------------------------------------
 
-echo "[5/5] Parsing manifest for locale: $LOCALE"
+echo "[5/5] Downloading MoP client data for locale: $LOCALE"
+echo
 
-python3 - "$MANIFEST" "$LOCALE" <<'PY'
-import os
+DOWNLOAD_LIST="$WORK_DIR/download-list.tsv"
+
+python3 - "$MANIFEST" "$LOCALE" "$DOWNLOAD_LIST" <<'PY'
+import re
 import sys
 
 manifest_path = sys.argv[1]
 locale = sys.argv[2]
+output_path = sys.argv[3]
 
 records = []
 
@@ -300,6 +298,21 @@ file_name = None
 size = None
 file_locale = None
 locale_from_path = None
+
+
+def manifest_filename_locale(name):
+    """
+    Reproduce TwinStar's locale detection from manifest filenames.
+
+    We only care about WoW locale identifiers such as enUS, enGB,
+    deDE, frFR, etc.
+    """
+    matches = re.findall(r'(?i)(?:^|[-_/])([a-z]{2}[A-Z]{2})(?:[-_.\\/]|$)', name)
+
+    if matches:
+        return matches[-1]
+
+    return None
 
 
 def valid_record():
@@ -338,21 +351,12 @@ with open(
 
             file_name = line[5:]
 
-            # Match TwinStar's special Updates/ behaviour.
+            # TwinStar deliberately preserves the previous record metadata
+            # for Updates/* records.
             if not file_name.startswith("Updates/"):
                 size = None
                 locale_from_path = None
-                file_locale = None
-
-                normalized = file_name.replace("\\", "/")
-                parts = normalized.split("/")
-
-                # TwinStar derives locale information from Data/<locale>/...
-                if len(parts) >= 2 and parts[0].lower() == "data":
-                    possible_locale = parts[1]
-
-                    if len(possible_locale) == 4:
-                        file_locale = possible_locale
+                file_locale = manifest_filename_locale(file_name)
 
         elif line.startswith("\tsize="):
             size = int(line[6:])
@@ -362,28 +366,138 @@ with open(
 
 finish_record()
 
-total_size = sum(size for _, size in records)
+total_size = sum(record_size for _, record_size in records)
 
-print()
+with open(output_path, "w", encoding="utf-8") as output:
+    for name, record_size in records:
+        output.write(f"{record_size}\t{name}\n")
+
 print(f"Selected records: {len(records)}")
 print(f"Total size:       {total_size:,} bytes")
 print(f"Total size:       {total_size / 1024 / 1024 / 1024:.2f} GiB")
-print()
-
-print("First 20 selected records:")
-print()
-
-for name, size in records[:20]:
-    print(f"  {size:>12,}  {name}")
-
-print()
-print("Discovery and manifest parsing completed successfully.")
-print()
-print("No CDN game-data files have been downloaded yet.")
 PY
 
 echo
+echo "Starting client download..."
+echo
+echo "You can stop this with Ctrl+C at any time."
+echo "Run the script again to resume."
+echo
+
+TOTAL_FILES=0
+COMPLETED_FILES=0
+
+while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
+    [[ -z "$FILE_NAME" ]] && continue
+    TOTAL_FILES=$((TOTAL_FILES + 1))
+done < "$DOWNLOAD_LIST"
+
+while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
+    [[ -z "$FILE_NAME" ]] && continue
+
+    COMPLETED_FILES=$((COMPLETED_FILES + 1))
+
+    TARGET="$GAME_DIR/$FILE_NAME"
+    URL="${CDN_BASE}${FILE_NAME}"
+
+    mkdir -p "$(dirname "$TARGET")"
+
+    CURRENT_SIZE=0
+
+    if [[ -f "$TARGET" ]]; then
+        CURRENT_SIZE=$(stat -f '%z' "$TARGET")
+    fi
+
+    echo
+    echo "[$COMPLETED_FILES/$TOTAL_FILES] $FILE_NAME"
+    echo "  Expected: $EXPECTED_SIZE bytes"
+
+    if [[ "$CURRENT_SIZE" -eq "$EXPECTED_SIZE" ]]; then
+        echo "  Status:   complete - skipping"
+        continue
+    fi
+
+    if [[ "$CURRENT_SIZE" -gt "$EXPECTED_SIZE" ]]; then
+        echo "  Status:   existing file is too large - restarting"
+        rm -f "$TARGET"
+        CURRENT_SIZE=0
+    fi
+
+    if [[ "$CURRENT_SIZE" -gt 0 ]]; then
+        echo "  Status:   resuming from $CURRENT_SIZE bytes"
+
+        HTTP_CODE=$(
+            curl \
+                --location \
+                --user-agent "$USER_AGENT" \
+                --fail \
+                --show-error \
+                --continue-at - \
+                --output "$TARGET" \
+                --write-out '%{http_code}' \
+                --silent \
+                "$URL" \
+                || true
+        )
+    else
+        echo "  Status:   downloading"
+
+        HTTP_CODE=$(
+            curl \
+                --location \
+                --user-agent "$USER_AGENT" \
+                --fail \
+                --show-error \
+                --output "$TARGET" \
+                --write-out '%{http_code}' \
+                --silent \
+                "$URL" \
+                || true
+        )
+    fi
+
+    if [[ "$HTTP_CODE" == "404" ]]; then
+        echo "  Status:   CDN returned 404 - skipping"
+        rm -f "$TARGET"
+        continue
+    fi
+
+    if [[ ! -f "$TARGET" ]]; then
+        echo
+        echo "ERROR: Download failed:"
+        echo "  $FILE_NAME"
+        echo
+        echo "HTTP status: $HTTP_CODE"
+        exit 1
+    fi
+
+    FINAL_SIZE=$(stat -f '%z' "$TARGET")
+
+    if [[ "$FINAL_SIZE" -ne "$EXPECTED_SIZE" ]]; then
+        echo
+        echo "ERROR: File size mismatch:"
+        echo
+        echo "  File:     $FILE_NAME"
+        echo "  Expected: $EXPECTED_SIZE"
+        echo "  Actual:   $FINAL_SIZE"
+        echo "  HTTP:     $HTTP_CODE"
+        echo
+        echo "The partial file has been kept so the download can be resumed."
+        exit 1
+    fi
+
+    echo "  Status:   complete"
+
+done < "$DOWNLOAD_LIST"
+
+echo
 echo "========================================"
-echo " Bootstrap/discovery test complete"
+echo " Client download complete"
 echo "========================================"
+echo
+echo "Game directory:"
+echo
+echo "  $GAME_DIR"
+echo
+echo "Bootstrap and manifest data have been downloaded successfully."
 echo
