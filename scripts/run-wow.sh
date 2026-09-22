@@ -16,10 +16,14 @@ if ! find_prefix; then
 fi
 
 if ! find_wow; then
-    echo "ERROR: Wow-64.exe could not be found in:"
-    echo "  $WINEPREFIX/drive_c"
+    echo "ERROR: Wow-64.exe could not be found."
     echo
-    echo "Install/download the MoP client into this prefix first."
+    echo "Wine prefix:"
+    echo "  $WINEPREFIX"
+    echo
+    echo "Download or resume the MoP client with:"
+    echo
+    echo "  ./scripts/download-client.sh"
     exit 1
 fi
 

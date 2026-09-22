@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 
-# Shared environment discovery for wow-mop-apple-silicon.
+# ------------------------------------------------------------
+# Wine discovery
+# ------------------------------------------------------------
 
 find_wine() {
-    # Allow the user to explicitly override detection.
     if [[ -n "${WINE:-}" && -x "${WINE}" ]]; then
         return 0
     fi
 
     local candidates=(
+        "$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
         "$HOME/Games/Wine/Wine Staging.app/Contents/Resources/wine/bin/wine"
         "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
-        "$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
         "/opt/homebrew/bin/wine"
         "/opt/homebrew/bin/wine64"
         "/usr/local/bin/wine"
@@ -28,7 +29,6 @@ find_wine() {
         fi
     done
 
-    # Finally try PATH.
     if command -v wine >/dev/null 2>&1; then
         WINE="$(command -v wine)"
         export WINE
@@ -49,14 +49,18 @@ find_wine() {
     exit 1
 }
 
+# ------------------------------------------------------------
+# Wine prefix discovery
+# ------------------------------------------------------------
+
 find_prefix() {
-    # Explicit override always wins.
     if [[ -n "${WINEPREFIX:-}" && -d "${WINEPREFIX}" ]]; then
         export WINEPREFIX
         return 0
     fi
 
     local candidates=(
+        "$HOME/Games/WoW-MoP/prefix"
         "$HOME/Games/TwinStar/prefix-wine11"
         "$HOME/Games/TwinStar/prefix"
         "$HOME/Games/WoW/prefix-wine11"
@@ -66,16 +70,17 @@ find_prefix() {
 
     local candidate
 
-    # Prefer a prefix that actually contains Wow-64.exe.
+    # Prefer prefixes containing a known WoW installation.
     for candidate in "${candidates[@]}"; do
-        if [[ -f "$candidate/drive_c/Wow-64.exe" ]]; then
+        if [[ -f "$candidate/drive_c/WoW/Wow-64.exe" ||
+              -f "$candidate/drive_c/Wow-64.exe" ]]; then
             WINEPREFIX="$candidate"
             export WINEPREFIX
             return 0
         fi
     done
 
-    # Otherwise use an existing Wine prefix.
+    # Otherwise accept an existing Wine prefix.
     for candidate in "${candidates[@]}"; do
         if [[ -d "$candidate/drive_c" ]]; then
             WINEPREFIX="$candidate"
@@ -87,20 +92,56 @@ find_prefix() {
     return 1
 }
 
+# ------------------------------------------------------------
+# WoW discovery
+# ------------------------------------------------------------
+
 find_wow() {
     if [[ -n "${WOW_EXE:-}" && -f "${WOW_EXE}" ]]; then
-        return 0
-    fi
-
-    if [[ -n "${WINEPREFIX:-}" &&
-          -f "$WINEPREFIX/drive_c/Wow-64.exe" ]]; then
-        WOW_EXE="$WINEPREFIX/drive_c/Wow-64.exe"
         export WOW_EXE
         return 0
     fi
 
+    if [[ -z "${WINEPREFIX:-}" ]]; then
+        return 1
+    fi
+
+    local candidates=(
+        "$WINEPREFIX/drive_c/WoW/Wow-64.exe"
+        "$WINEPREFIX/drive_c/Wow-64.exe"
+    )
+
+    local candidate
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            WOW_EXE="$candidate"
+            export WOW_EXE
+            return 0
+        fi
+    done
+
+    # Fallback for custom installations inside the prefix.
+    WOW_EXE="$(
+        find "$WINEPREFIX/drive_c" \
+            -type f \
+            -name "Wow-64.exe" \
+            -print \
+            -quit 2>/dev/null || true
+    )"
+
+    if [[ -n "$WOW_EXE" && -f "$WOW_EXE" ]]; then
+        export WOW_EXE
+        return 0
+    fi
+
+    unset WOW_EXE
     return 1
 }
+
+# ------------------------------------------------------------
+# Environment summary
+# ------------------------------------------------------------
 
 show_environment() {
     echo "Detected environment:"
