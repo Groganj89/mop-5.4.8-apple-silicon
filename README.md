@@ -43,6 +43,8 @@ The configuration has successfully been tested for:
 - Automated client bootstrap
 - Resumable game-data download
 - Locale-aware manifest filtering
+- Blizzard `ptv3` partial-file metadata detection
+- Safe repeated setup/download runs after WoW has modified MPQ files
 - Direct `Wow-64.exe` launch
 - TwinStar / Helios authentication
 - Character selection
@@ -52,6 +54,8 @@ The configuration has successfully been tested for:
 - macOS fullscreen
 
 A **clean installation was successfully tested on an M4 Pro MacBook Pro**, including downloading the complete client without copying files from an existing installation.
+
+The same installation was then launched, allowed to update its local MPQ metadata, and passed through the downloader again. All 58 manifest records were correctly recognised without unnecessarily downloading the client again.
 
 Graphics compatibility and performance tuning remain ongoing. WineD3D works, but graphical artefacts and reduced performance can occur at higher settings.
 
@@ -119,8 +123,8 @@ The setup process will:
 5. Download the required client bootstrap files.
 6. Parse the current MoP manifest.
 7. Select the generic and appropriate locale-specific game files.
-8. Download the game data.
-9. Verify the installation.
+8. Download or resume the game data.
+9. Validate existing client data where possible.
 10. Prepare the client for the known-working WineD3D configuration.
 
 The default Wine prefix is:
@@ -151,7 +155,8 @@ The downloader:
 4. Discovers the current game build and manifest.
 5. Resolves the current TwinStar CDN.
 6. Parses the manifest using TwinStar-compatible locale filtering.
-7. Downloads the required game data.
+7. Downloads or resumes the required game data.
+8. Recognises valid Blizzard partial-file metadata added by the WoW client.
 
 For the currently tested `enUS` build, this resolves to:
 
@@ -183,9 +188,64 @@ run:
 
 again.
 
-Files already at their expected size are skipped and partial downloads can continue from their existing data.
+Files already at their expected size are skipped and partial downloads continue from their existing data.
 
 The downloader does not require an existing WoW installation.
+
+## Blizzard partial-file metadata
+
+After World of Warcraft has been launched, some MPQ files may become slightly larger than the sizes listed in the TwinStar manifest.
+
+This is expected behaviour.
+
+WoW can append Blizzard partial-file metadata to an otherwise complete archive. The metadata found during testing uses a footer with the signature:
+
+```text
+ptv3
+```
+
+The downloader recognises this condition rather than assuming that every oversized MPQ is corrupt.
+
+For an oversized file, it validates the footer and requires:
+
+```text
+Signature:    ptv3
+Version:      3
+Map offset:   expected manifest payload size
+Block size:   16384 bytes
+```
+
+The embedded build number is also displayed for diagnostic purposes, but it is not required to match build 18414. Base and update archives legitimately contain metadata associated with earlier WoW builds.
+
+For example, testing observed base archives associated with build:
+
+```text
+15890
+```
+
+and update archives progressing through later builds including:
+
+```text
+16016
+16048
+16057
+16309
+...
+18273
+18274
+```
+
+If the footer is valid and its map offset exactly matches the expected manifest size, the archive is treated as complete:
+
+```text
+Status:   complete - Blizzard partial-file metadata detected
+```
+
+If an existing file is larger than the manifest size but does **not** contain recognised metadata, the downloader stops and leaves the file untouched rather than deleting or replacing potentially valid client data.
+
+This behaviour makes repeated setup runs safe after WoW has modified its local MPQ files.
+
+Do **not** manually truncate MPQ files simply because their local size is slightly larger than the manifest size.
 
 ---
 
@@ -286,6 +346,7 @@ WoW then displayed:
 
 ```text
 World of Warcraft was unable to start up 3D acceleration.
+
 Please make sure DirectX 9.0c is installed and your video
 drivers are up-to-date.
 ```
@@ -609,8 +670,6 @@ mop-5.4.8-apple-silicon/
     └── run-wow-desktop.sh
 ```
 
-Legacy development scripts may remain temporarily while the new installation process is validated, but they are not part of the normal setup path.
-
 ---
 
 # Troubleshooting
@@ -645,6 +704,28 @@ again.
 Completed files are skipped and partial game-data files can be resumed.
 
 Ensure sufficient free disk space is available. The current `enUS` client requires approximately **22 GiB of game data**, in addition to space required by Wine, macOS and temporary files.
+
+---
+
+## MPQ file is larger than the manifest size
+
+This can be normal after WoW has been launched.
+
+The client may append Blizzard `ptv3` partial-file metadata to MPQ archives, causing their local file size to exceed the payload size recorded in the download manifest.
+
+The downloader automatically validates recognised metadata.
+
+A valid file produces:
+
+```text
+Status:   complete - Blizzard partial-file metadata detected
+```
+
+and is not downloaded again.
+
+If the metadata cannot be validated, the downloader stops and preserves the existing file.
+
+Do not delete or truncate an oversized MPQ solely because its size differs from the manifest.
 
 ---
 
@@ -723,9 +804,9 @@ This runs WoW inside a Wine virtual desktop and may allow the correct display mo
 
 ---
 
-# Clean Installation Testing
+# Clean Installation and Idempotency Testing
 
-A full clean installation has now been successfully tested on an **M4 Pro MacBook Pro**.
+A full clean installation has been successfully tested on an **M4 Pro MacBook Pro**.
 
 The test intentionally did not copy the existing ~22 GiB M1 installation.
 
@@ -740,12 +821,43 @@ Instead, the M4:
 7. Parsed the current manifest.
 8. Selected 58 records for `enUS`.
 9. Downloaded approximately 21.98 GiB of game data.
-10. Launched `Wow-64.exe`.
-11. Logged into TwinStar / Helios.
-12. Entered the game world.
-13. Successfully ran around in-game.
+10. Successfully resumed an interrupted game-data download.
+11. Launched `Wow-64.exe`.
+12. Logged into TwinStar / Helios.
+13. Entered the game world.
+14. Successfully ran around in-game.
 
-This clean-room test removed the dependency on assumptions inherited from the original M1 development environment.
+The installation was then tested again **after WoW had modified the downloaded MPQ files**.
+
+The downloader processed all 58 manifest records successfully:
+
+- Exact-size files were skipped.
+- MPQs containing valid Blizzard `ptv3` metadata were recognised as complete.
+- The metadata's embedded map offset was validated against the manifest payload size.
+- No valid expanded MPQ was deleted or unnecessarily downloaded again.
+- The downloader reached `Client download complete`.
+
+This validates the complete lifecycle:
+
+```text
+Fresh install
+    ↓
+Interrupted download
+    ↓
+Resume
+    ↓
+Complete client
+    ↓
+Launch WoW
+    ↓
+WoW appends MPQ metadata
+    ↓
+Run downloader again
+    ↓
+Existing client validated and preserved
+```
+
+This clean-room and repeat-run testing removes the dependency on assumptions inherited from the original M1 development environment.
 
 Testing on additional Apple Silicon generations remains welcome.
 
@@ -758,7 +870,7 @@ Currently confirmed:
 | SoC | Result | Notes |
 |---|---|---|
 | Apple M1 | Working | Original development environment |
-| Apple M4 Pro | Working | Fresh installation and complete client download validated |
+| Apple M4 Pro | Working | Fresh installation, full client download, gameplay and repeat-run validation |
 
 Testing is particularly useful on:
 
