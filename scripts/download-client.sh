@@ -419,9 +419,8 @@ while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
     fi
 
     if [[ "$CURRENT_SIZE" -gt "$EXPECTED_SIZE" ]]; then
-        echo "  Status:   existing file is too large - restarting"
-        rm -f "$TARGET"
-        CURRENT_SIZE=0
+        echo "  Status:   larger than manifest - preserving existing file"
+        continue
     fi
 
     if [[ "$CURRENT_SIZE" -gt 0 ]]; then
