@@ -91,11 +91,9 @@ for entry in entries:
 
     if not os.path.exists(filename):
         download = True
-
     elif filename.lower().endswith(".wtf"):
         # TwinStar leaves existing WTF files untouched.
         download = False
-
     elif md5_file(filename).lower() != expected_md5:
         download = True
 
@@ -308,6 +306,7 @@ def manifest_filename_locale(name):
     The first directory directly beneath Data/ is treated as
     the record's locale.
     """
+
     match = re.match(r"^Data/([^/]+)/", name, re.IGNORECASE)
 
     if match:
@@ -324,7 +323,10 @@ def valid_record():
         if file_locale is not None and file_locale.lower() == locale.lower():
             return True
 
-        if locale_from_path is not None and locale_from_path.lower() == locale.lower():
+        if (
+            locale_from_path is not None
+            and locale_from_path.lower() == locale.lower()
+        ):
             return True
 
         return False
@@ -343,7 +345,6 @@ with open(
     encoding="utf-8-sig",
     errors="replace",
 ) as manifest:
-
     for raw_line in manifest:
         line = raw_line.rstrip("\r\n")
 
@@ -390,6 +391,7 @@ COMPLETED_FILES=0
 
 while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
     [[ -z "$FILE_NAME" ]] && continue
+
     TOTAL_FILES=$((TOTAL_FILES + 1))
 done < "$DOWNLOAD_LIST"
 
@@ -413,14 +415,83 @@ while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
     echo "[$COMPLETED_FILES/$TOTAL_FILES] $FILE_NAME"
     echo "  Expected: $EXPECTED_SIZE bytes"
 
+    # A file exactly matching the manifest size is complete.
     if [[ "$CURRENT_SIZE" -eq "$EXPECTED_SIZE" ]]; then
         echo "  Status:   complete - skipping"
         continue
     fi
 
+    # WoW can append Blizzard partial-file metadata to an otherwise complete
+    # MPQ. This makes the local file larger than the manifest payload size.
+    #
+    # The final 24 bytes contain a FILE_BITMAP_FOOTER:
+    #
+    #   signature   "ptv3"
+    #   version     3
+    #   build       WoW build associated with the archive
+    #   map offset  original MPQ payload size
+    #   block size  16384 bytes
+    #
+    # Only accept an oversized file when that footer is recognised and its
+    # map offset exactly matches the expected manifest size.
     if [[ "$CURRENT_SIZE" -gt "$EXPECTED_SIZE" ]]; then
-        echo "  Status:   larger than manifest - preserving existing file"
-        continue
+        if PTV3_BUILD=$(
+            python3 - "$TARGET" "$EXPECTED_SIZE" <<'PY'
+import struct
+import sys
+
+path = sys.argv[1]
+expected_size = int(sys.argv[2])
+
+try:
+    with open(path, "rb") as f:
+        f.seek(-24, 2)
+        footer = f.read(24)
+
+    if len(footer) != 24:
+        sys.exit(1)
+
+    (
+        signature,
+        version,
+        build,
+        offset_lo,
+        offset_hi,
+        block_size,
+    ) = struct.unpack("<6I", footer)
+
+    map_offset = offset_lo | (offset_hi << 32)
+
+    if (
+        signature.to_bytes(4, "little") == b"ptv3"
+        and version == 3
+        and map_offset == expected_size
+        and block_size == 16384
+    ):
+        print(build)
+        sys.exit(0)
+
+except (OSError, struct.error):
+    pass
+
+sys.exit(1)
+PY
+        ); then
+            echo "  Status:   complete - Blizzard partial-file metadata detected"
+            echo "  Build:    $PTV3_BUILD"
+            continue
+        fi
+
+        echo
+        echo "ERROR: Existing file is larger than expected and does not"
+        echo "contain recognised Blizzard partial-file metadata."
+        echo
+        echo "  File:     $FILE_NAME"
+        echo "  Expected: $EXPECTED_SIZE"
+        echo "  Actual:   $CURRENT_SIZE"
+        echo
+        echo "The existing file has been left untouched."
+        exit 1
     fi
 
     if [[ "$CURRENT_SIZE" -gt 0 ]]; then
@@ -487,7 +558,6 @@ while IFS=$'\t' read -r EXPECTED_SIZE FILE_NAME; do
     fi
 
     echo "  Status:   complete"
-
 done < "$DOWNLOAD_LIST"
 
 echo
