@@ -1,4 +1,4 @@
-# WoW MoP 5.4.8 on Apple Silicon
+# World of Warcraft: Mists of Pandaria 5.4.8 on Apple Silicon
 
 Run the Windows **World of Warcraft: Mists of Pandaria 5.4.8 (build 18414)** client on Apple Silicon Macs using Wine.
 
