@@ -1,0 +1,44 @@
+diff --git a/src/d9mtmetal/dll.c b/src/d9mtmetal/dll.c
+index e253f27..a4e0555 100644
+--- a/src/d9mtmetal/dll.c
++++ b/src/d9mtmetal/dll.c
+@@ -12,8 +12,8 @@ typedef UINT64 unixlib_handle_t;
+ /* wine-internal MEMORY_INFORMATION_CLASS value, stable since wine 7 */
+ #define MemoryWineUnixFuncs 1000
+ 
+-extern NTSTATUS WINAPI __wine_unix_call(unixlib_handle_t handle,
+-                                        unsigned int code, void *args);
++extern NTSTATUS (WINAPI *__wine_unix_call_dispatcher)(
++    unixlib_handle_t handle, unsigned int code, void *args);
+ extern NTSTATUS WINAPI NtQueryVirtualMemory(HANDLE process, LPCVOID addr,
+                                             int info_class, PVOID buffer,
+                                             SIZE_T length, SIZE_T *res_len);
+@@ -43,5 +43,5 @@ int __cdecl D9MT_UnixCall(unsigned int code, void *params) {
+     if (status)
+       return status;
+   }
+-  return __wine_unix_call(d9mt_unix_handle, code, params);
++  return __wine_unix_call_dispatcher(d9mt_unix_handle, code, params);
+ }
+diff --git a/tools/build-d9mtmetal.sh b/tools/build-d9mtmetal.sh
+index 6003e5b..21b5db5 100755
+--- a/tools/build-d9mtmetal.sh
++++ b/tools/build-d9mtmetal.sh
+@@ -28,7 +28,7 @@ echo "[d9mtmetal] ntdll import libs from CrossOver's ntdll exports"
+ cat > "$OUT/d9mtmetal/ntdll-cx32.def" <<'EOF'
+ LIBRARY ntdll.dll
+ EXPORTS
+-  __wine_unix_call@16
++  __wine_unix_call_dispatcher DATA
+   NtQueryVirtualMemory@24
+ EOF
+ i686-w64-mingw32-dlltool -k -d "$OUT/d9mtmetal/ntdll-cx32.def" \
+@@ -36,7 +36,7 @@ i686-w64-mingw32-dlltool -k -d "$OUT/d9mtmetal/ntdll-cx32.def" \
+ cat > "$OUT/d9mtmetal/ntdll-cx64.def" <<'EOF'
+ LIBRARY ntdll.dll
+ EXPORTS
+-  __wine_unix_call
++  __wine_unix_call_dispatcher DATA
+   NtQueryVirtualMemory
+ EOF
+ x86_64-w64-mingw32-dlltool -d "$OUT/d9mtmetal/ntdll-cx64.def" \

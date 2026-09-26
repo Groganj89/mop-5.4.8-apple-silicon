@@ -1,0 +1,299 @@
+diff --git a/meson.build b/meson.build
+index e10c901..58125e8 100644
+--- a/meson.build
++++ b/meson.build
+@@ -116,7 +116,7 @@ xcrun = find_program('xcrun')
+ 
+ metalir_generator = generator(xcrun,
+   output    : [ '@BASENAME@.air'],
+-  arguments : [ '-sdk', 'macosx', 'metal', '-o', '@OUTPUT@', '-c', '@INPUT@', '@EXTRA_ARGS@'],
++  arguments : [ 'metal', '-o', '@OUTPUT@', '-c', '@INPUT@', '@EXTRA_ARGS@'],
+ )
+ 
+ metallib_generator = generator(xcrun,
+diff --git a/src/airconv/shaders/air_tessellation.metal b/src/airconv/shaders/air_tessellation.metal
+index 56ba86e..e6705d8 100644
+--- a/src/airconv/shaders/air_tessellation.metal
++++ b/src/airconv/shaders/air_tessellation.metal
+@@ -150,7 +150,7 @@ struct TessMeshWorkload {
+ 
+ int
+ get_next_index(threadgroup int *out_count) {
+-  return __metal_atomic_fetch_add_explicit(out_count, 1, int(memory_order_relaxed), __METAL_MEMORY_SCOPE_THREADGROUP__);
++  return atomic_fetch_add_explicit(reinterpret_cast<threadgroup atomic_int *>(out_count), 1, memory_order_relaxed);
+ }
+ 
+ template <partitioning partition>
+diff --git a/src/winemetal/unix/winemetal_unix.c b/src/winemetal/unix/winemetal_unix.c
+index 4744692..4a068bc 100644
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -120,7 +120,22 @@ _MTLCommandBuffer_commit(void *obj) {
+ static NTSTATUS
+ _MTLCommandBuffer_waitUntilCompleted(void *obj) {
+   struct unixcall_generic_obj_noret *params = obj;
+-  [(id<MTLCommandBuffer>)params->handle waitUntilCompleted];
++  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->handle;
++
++  fprintf(stderr,
++          "[winemetal-cmdbuf] WAIT begin buffer=%p status=%lu\\n",
++          cmdbuf, (unsigned long)[cmdbuf status]);
++  fflush(stderr);
++
++  [cmdbuf waitUntilCompleted];
++
++  fprintf(stderr,
++          "[winemetal-cmdbuf] WAIT end buffer=%p status=%lu error=%s\\n",
++          cmdbuf,
++          (unsigned long)[cmdbuf status],
++          [cmdbuf error] ? [[[cmdbuf error] description] UTF8String] : "(none)");
++  fflush(stderr);
++
+   return STATUS_SUCCESS;
+ }
+ 
+@@ -420,6 +435,11 @@ static NTSTATUS
+ _MTLCommandBuffer_blitCommandEncoder(void *obj) {
+   struct unixcall_generic_obj_obj_ret *params = obj;
+   params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle blitCommandEncoder];
++
++  fprintf(stderr,
++          "[winemetal-encoder] BLIT cmdbuf=%p encoder=%p\\n",
++          (void *)params->handle, (void *)params->ret);
++  fflush(stderr);
+   return STATUS_SUCCESS;
+ }
+ 
+@@ -428,6 +448,12 @@ _MTLCommandBuffer_computeCommandEncoder(void *obj) {
+   struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+   params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle
+       computeCommandEncoderWithDispatchType:params->arg ? MTLDispatchTypeConcurrent : MTLDispatchTypeSerial];
++
++  fprintf(stderr,
++          "[winemetal-encoder] COMPUTE cmdbuf=%p encoder=%p concurrent=%llu\\n",
++          (void *)params->handle, (void *)params->ret,
++          (unsigned long long)params->arg);
++  fflush(stderr);
+   return STATUS_SUCCESS;
+ }
+ 
+@@ -484,8 +510,40 @@ _MTLCommandBuffer_renderCommandEncoder(void *obj) {
+     descriptor.tileHeight = info->tile_height;
+   }
+ 
++  fprintf(stderr,
++          "[winemetal-render] cmdbuf=%p colors:",
++          (void *)params->handle);
++
++  for (unsigned i = 0; i < 8; i++)
++  {
++      id<MTLTexture> texture = descriptor.colorAttachments[i].texture;
++      if (texture)
++          fprintf(stderr, " c%u=%p(%lux%lu)", i, (void *)texture,
++                  (unsigned long)texture.width,
++                  (unsigned long)texture.height);
++  }
++
++  if (descriptor.depthAttachment.texture)
++      fprintf(stderr, " depth=%p(%lux%lu)",
++              (void *)descriptor.depthAttachment.texture,
++              (unsigned long)descriptor.depthAttachment.texture.width,
++              (unsigned long)descriptor.depthAttachment.texture.height);
++
++  if (descriptor.stencilAttachment.texture)
++      fprintf(stderr, " stencil=%p(%lux%lu)",
++              (void *)descriptor.stencilAttachment.texture,
++              (unsigned long)descriptor.stencilAttachment.texture.width,
++              (unsigned long)descriptor.stencilAttachment.texture.height);
++
++  fprintf(stderr, "\n");
++
+   params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle renderCommandEncoderWithDescriptor:descriptor];
+ 
++  fprintf(stderr,
++          "[winemetal-encoder] RENDER cmdbuf=%p encoder=%p\\n",
++          (void *)params->handle, (void *)params->ret);
++  fflush(stderr);
++
+   [descriptor release];
+   return STATUS_SUCCESS;
+ }
+@@ -709,6 +767,26 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
+     }
+     case WMTBlitCommandCopyFromTextureToBuffer: {
+       struct wmtcmd_blit_copy_from_texture_to_buffer *body = (struct wmtcmd_blit_copy_from_texture_to_buffer *)next;
++      {
++        id<MTLTexture> src = (id<MTLTexture>)body->src;
++        id<MTLTexture> dst = (id<MTLTexture>)body->dst;
++
++        fprintf(stderr,
++                "[winemetal-blit-props] "
++                "src=%p fmt=%lu usage=%lu storage=%lu hazard=%lu "
++                "dst=%p fmt=%lu usage=%lu storage=%lu hazard=%lu\\n",
++                (void *)src,
++                (unsigned long)src.pixelFormat,
++                (unsigned long)src.usage,
++                (unsigned long)src.storageMode,
++                (unsigned long)src.hazardTrackingMode,
++                (void *)dst,
++                (unsigned long)dst.pixelFormat,
++                (unsigned long)dst.usage,
++                (unsigned long)dst.storageMode,
++                (unsigned long)dst.hazardTrackingMode);
++      }
++
+       [encoder copyFromTexture:(id<MTLTexture>)body->src
+                        sourceSlice:body->slice
+                        sourceLevel:body->level
+@@ -722,6 +800,47 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
+     }
+     case WMTBlitCommandCopyFromTextureToTexture: {
+       struct wmtcmd_blit_copy_from_texture_to_texture *body = (struct wmtcmd_blit_copy_from_texture_to_texture *)next;
++
++      {
++          id<MTLTexture> src = (id<MTLTexture>)body->src;
++          id<MTLTexture> dst = (id<MTLTexture>)body->dst;
++
++          fprintf(stderr,
++                  "[winemetal-blit-props] "
++                  "src=%p fmt=%lu usage=%lu storage=%lu hazard=%lu "
++                  "dst=%p fmt=%lu usage=%lu storage=%lu hazard=%lu\n",
++                  (void *)src,
++                  (unsigned long)src.pixelFormat,
++                  (unsigned long)src.usage,
++                  (unsigned long)src.storageMode,
++                  (unsigned long)src.hazardTrackingMode,
++                  (void *)dst,
++                  (unsigned long)dst.pixelFormat,
++                  (unsigned long)dst.usage,
++                  (unsigned long)dst.storageMode,
++                  (unsigned long)dst.hazardTrackingMode);
++      }
++
++
++      fprintf(stderr,
++              "[winemetal-blit] TEX->TEX src=%p(%lux%lux%lu) dst=%p(%lux%lux%lu) "
++              "srcSlice=%lu srcLevel=%lu dstSlice=%lu dstLevel=%lu "
++              "size=%lux%lux%lu\\n",
++              (void *)body->src,
++              (unsigned long)((id<MTLTexture>)body->src).width,
++              (unsigned long)((id<MTLTexture>)body->src).height,
++              (unsigned long)((id<MTLTexture>)body->src).depth,
++              (void *)body->dst,
++              (unsigned long)((id<MTLTexture>)body->dst).width,
++              (unsigned long)((id<MTLTexture>)body->dst).height,
++              (unsigned long)((id<MTLTexture>)body->dst).depth,
++              (unsigned long)body->src_slice,
++              (unsigned long)body->src_level,
++              (unsigned long)body->dst_slice,
++              (unsigned long)body->dst_level,
++              (unsigned long)body->src_size.width,
++              (unsigned long)body->src_size.height,
++              (unsigned long)body->src_size.depth);
+       [encoder copyFromTexture:(id<MTLTexture>)body->src
+                    sourceSlice:body->src_slice
+                    sourceLevel:body->src_level
+@@ -1226,7 +1345,14 @@ _MTLBuffer_didModifyRange(void *obj) {
+ static NTSTATUS
+ _MTLCommandBuffer_presentDrawable(void *obj) {
+   struct unixcall_generic_obj_obj_noret *params = obj;
+-  [(id<MTLCommandBuffer>)params->handle presentDrawable:(id<MTLDrawable>)params->arg];
++  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->handle;
++
++  fprintf(stderr,
++          "[winemetal-present] cmdbuf=%p drawable=%p\\n",
++          cmdbuf, (void *)params->arg);
++  fflush(stderr);
++
++  [cmdbuf presentDrawable:(id<MTLDrawable>)params->arg];
+   return STATUS_SUCCESS;
+ }
+ 
+@@ -1575,35 +1701,38 @@ struct macdrv_functions_t {
+ static NTSTATUS
+ _CreateMetalViewFromHWND(void *obj) {
+   struct unixcall_create_metal_view_from_hwnd *params = obj;
++  macdrv_metal_view (*pfn_create_metal_view_from_hwnd)(
++      HWND hwnd, macdrv_metal_device device, macdrv_metal_layer *layer);
+ 
+-  struct macdrv_win_data *(*pfn_get_win_data)(HWND hwnd) = NULL;
+-  void (*pfn_release_win_data)(struct macdrv_win_data *data) = NULL;
+-  macdrv_metal_view (*pfn_macdrv_view_create_metal_view)(macdrv_view v, macdrv_metal_device d) = NULL;
+-  macdrv_metal_layer (*pfn_macdrv_view_get_metal_layer)(macdrv_metal_view v) = NULL;
+-
+-  struct macdrv_functions_t *macdrv_functions;
+-  if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
+-    pfn_get_win_data = macdrv_functions->get_win_data;
+-    pfn_release_win_data = macdrv_functions->release_win_data;
+-    pfn_macdrv_view_create_metal_view = macdrv_functions->macdrv_view_create_metal_view;
+-    pfn_macdrv_view_get_metal_layer = macdrv_functions->macdrv_view_get_metal_layer;
+-  } else {
+-    pfn_get_win_data = dlsym(RTLD_DEFAULT, "get_win_data");
+-    pfn_release_win_data = dlsym(RTLD_DEFAULT, "release_win_data");
+-    pfn_macdrv_view_create_metal_view = dlsym(RTLD_DEFAULT, "macdrv_view_create_metal_view");
+-    pfn_macdrv_view_get_metal_layer = dlsym(RTLD_DEFAULT, "macdrv_view_get_metal_layer");
+-  }
++  pfn_create_metal_view_from_hwnd =
++      dlsym(RTLD_DEFAULT, "macdrv_create_metal_view_from_hwnd");
++
++  fprintf(stderr,
++          "[winemetal-bridge] dlsym create=%p hwnd=%p device=%p\\n",
++          (void *)pfn_create_metal_view_from_hwnd,
++          (void *)(uintptr_t)params->hwnd,
++          (void *)(uintptr_t)params->device);
+ 
+-  if (pfn_get_win_data && pfn_release_win_data && pfn_macdrv_view_create_metal_view &&
+-      pfn_macdrv_view_get_metal_layer) {
+-    struct macdrv_win_data *win_data = pfn_get_win_data((HWND)params->hwnd);
++  params->ret_view = 0;
++  params->ret_layer = 0;
++
++  if (pfn_create_metal_view_from_hwnd) {
++    macdrv_metal_layer layer = NULL;
+     macdrv_metal_view view =
+-        pfn_macdrv_view_create_metal_view(win_data->client_cocoa_view, (macdrv_metal_device)params->device);
++        pfn_create_metal_view_from_hwnd((HWND)params->hwnd,
++                                        (macdrv_metal_device)params->device,
++                                        &layer);
++
++    fprintf(stderr,
++            "[winemetal-bridge] returned view=%p layer=%p\\n",
++            (void *)view,
++            (void *)layer);
++
+     params->ret_view = (obj_handle_t)view;
+-    if (view) {
+-      params->ret_layer = (obj_handle_t)pfn_macdrv_view_get_metal_layer(view);
+-    }
+-    pfn_release_win_data(win_data);
++    params->ret_layer = (obj_handle_t)layer;
++  } else {
++    fprintf(stderr,
++            "[winemetal-bridge] ERROR: Wine bridge symbol not found\\n");
+   }
+ 
+   return STATUS_SUCCESS;
+@@ -1612,18 +1741,13 @@ _CreateMetalViewFromHWND(void *obj) {
+ static NTSTATUS
+ _ReleaseMetalView(void *obj) {
+   struct unixcall_generic_obj_noret *params = obj;
++  void (*pfn_release_metal_view)(macdrv_metal_view view);
+ 
+-  void (*pfn_macdrv_view_release_metal_view)(macdrv_metal_view v) = NULL;
+-
+-  struct macdrv_functions_t *macdrv_functions;
+-  if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
+-    pfn_macdrv_view_release_metal_view = macdrv_functions->macdrv_view_release_metal_view;
+-  } else {
+-    pfn_macdrv_view_release_metal_view = dlsym(RTLD_DEFAULT, "macdrv_view_release_metal_view");
+-  }
++  pfn_release_metal_view =
++      dlsym(RTLD_DEFAULT, "macdrv_release_metal_view_for_winemetal");
+ 
+-  if (pfn_macdrv_view_release_metal_view)
+-    pfn_macdrv_view_release_metal_view((macdrv_metal_view)params->handle);
++  if (pfn_release_metal_view)
++    pfn_release_metal_view((macdrv_metal_view)params->handle);
+ 
+   return STATUS_SUCCESS;
+ }

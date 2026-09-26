@@ -1,0 +1,193 @@
+diff --git a/dlls/winemac.drv/macdrv.h b/dlls/winemac.drv/macdrv.h
+index 9b76c04..7458b25 100644
+--- a/dlls/winemac.drv/macdrv.h
++++ b/dlls/winemac.drv/macdrv.h
+@@ -204,6 +204,12 @@ extern BOOL macdrv_SystemParametersInfo(UINT action, UINT int_param, void *ptr_p
+ 
+ extern struct macdrv_win_data *get_win_data(HWND hwnd);
+ extern void release_win_data(struct macdrv_win_data *data);
++extern __attribute__((visibility("default"))) macdrv_metal_view
++macdrv_create_metal_view_from_hwnd(HWND hwnd,
++                                   macdrv_metal_device device,
++                                   macdrv_metal_layer *layer);
++extern __attribute__((visibility("default"))) void
++macdrv_release_metal_view_for_winemetal(macdrv_metal_view view);
+ extern void init_win_context(void);
+ extern macdrv_window macdrv_get_cocoa_window(HWND hwnd, BOOL require_on_screen);
+ extern RGNDATA *get_region_data(HRGN hrgn, HDC hdc_lptodp);
+diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
+index 2702881..757bab3 100644
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1070,6 +1070,92 @@ static void perform_window_command(HWND hwnd, unsigned int style_any, unsigned i
+     NtUserPostMessage(hwnd, WM_SYSCOMMAND, command, 0);
+ }
+ 
++macdrv_metal_view macdrv_create_metal_view_from_hwnd(HWND hwnd,
++                                                        macdrv_metal_device device,
++                                                        macdrv_metal_layer *layer)
++{
++    struct macdrv_win_data *data;
++    macdrv_metal_view view = NULL;
++
++    fprintf(stderr,
++            "[winemac-bridge] hwnd=%p device=%p\\n",
++            hwnd, device);
++
++    if (layer) *layer = NULL;
++
++    data = get_win_data(hwnd);
++
++    fprintf(stderr,
++            "[winemac-bridge] get_win_data=%p\\n",
++            (void *)data);
++
++    if (!data)
++        return NULL;
++
++    fprintf(stderr,
++            "[winemac-bridge] client_view=%p cocoa_window=%p\\n",
++            (void *)data->client_view,
++            (void *)data->cocoa_window);
++
++    if (!data->client_view)
++    {
++        struct client_surface *client;
++
++        fprintf(stderr,
++                "[winemac-bridge] client_view NULL; creating client surface\\n");
++
++        release_win_data(data);
++
++        client = macdrv_CreateClientSurface(hwnd, 0, FALSE);
++
++        fprintf(stderr,
++                "[winemac-bridge] CreateClientSurface=%p\\n",
++                (void *)client);
++
++        data = get_win_data(hwnd);
++
++        fprintf(stderr,
++                "[winemac-bridge] after surface client_view=%p\\n",
++                data ? (void *)data->client_view : NULL);
++
++        if (!data)
++            return NULL;
++    }
++
++    if (data->client_view)
++    {
++        view = macdrv_view_create_metal_view(data->client_view, device);
++
++        fprintf(stderr,
++                "[winemac-bridge] metal_view=%p\\n",
++                (void *)view);
++
++        if (view && layer)
++        {
++            *layer = macdrv_view_get_metal_layer(view);
++
++            fprintf(stderr,
++                    "[winemac-bridge] metal_layer=%p\\n",
++                    (void *)*layer);
++        }
++    }
++
++    release_win_data(data);
++
++    fprintf(stderr,
++            "[winemac-bridge] returning view=%p layer=%p\\n",
++            (void *)view,
++            layer ? (void *)*layer : NULL);
++
++    return view;
++}
++
++void macdrv_release_metal_view_for_winemetal(macdrv_metal_view view)
++{
++    if (view)
++        macdrv_view_release_metal_view(view);
++}
++
+ static void macdrv_client_surface_destroy(struct client_surface *client)
+ {
+     struct macdrv_client_surface *surface = impl_from_client_surface(client);
+@@ -1108,9 +1194,36 @@ static void macdrv_client_surface_update(struct client_surface *client)
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
+ 
+-    if (!(data = get_win_data(toplevel))) return;
++    fprintf(stderr,
++            "[winemac-surface] UPDATE hwnd=%p surface=%p cocoa_view=%p toplevel=%p\n",
++            hwnd, (void *)surface, (void *)surface->cocoa_view, toplevel);
++
++    if (!(data = get_win_data(toplevel)))
++    {
++        fprintf(stderr,
++                "[winemac-surface] UPDATE get_win_data FAILED hwnd=%p\n",
++                toplevel);
++        return;
++    }
++
++    fprintf(stderr,
++            "[winemac-surface] UPDATE cocoa_window=%p existing_client_view=%p\n",
++            (void *)data->cocoa_window,
++            (void *)data->client_view);
++
+     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(client->monitor_rect));
+-    macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
++
++    macdrv_set_view_superview(surface->cocoa_view,
++                              toplevel == hwnd ? NULL : data->client_view,
++                              data->cocoa_window,
++                              NULL,
++                              NULL);
++
++    fprintf(stderr,
++            "[winemac-surface] UPDATE attached cocoa_view=%p window=%p\n",
++            (void *)surface->cocoa_view,
++            (void *)data->cocoa_window);
++
+     release_win_data(data);
+ }
+ 
+@@ -1121,13 +1234,37 @@ static void macdrv_client_surface_present(struct client_surface *client, HDC hdc
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
+ 
+-    if (!(data = get_win_data(surface->client.hwnd))) return;
++    fprintf(stderr,
++            "[winemac-surface] PRESENT hwnd=%p surface=%p cocoa_view=%p\n",
++            surface->client.hwnd, (void *)surface, (void *)surface->cocoa_view);
++
++    if (!(data = get_win_data(surface->client.hwnd)))
++    {
++        fprintf(stderr,
++                "[winemac-surface] PRESENT get_win_data FAILED hwnd=%p\n",
++                surface->client.hwnd);
++        return;
++    }
++
++    fprintf(stderr,
++            "[winemac-surface] PRESENT before client_view=%p cocoa_window=%p\n",
++            (void *)data->client_view,
++            (void *)data->cocoa_window);
++
+     if (data->client_view != surface->cocoa_view)
+     {
+-        if (data->client_view) macdrv_set_view_hidden(data->client_view, TRUE);
++        if (data->client_view)
++            macdrv_set_view_hidden(data->client_view, TRUE);
++
+         macdrv_set_view_hidden(surface->cocoa_view, FALSE);
+         data->client_view = surface->cocoa_view;
+     }
++
++    fprintf(stderr,
++            "[winemac-surface] PRESENT after client_view=%p cocoa_view=%p\n",
++            (void *)data->client_view,
++            (void *)surface->cocoa_view);
++
+     release_win_data(data);
+ }
+ 
